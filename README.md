@@ -1,75 +1,61 @@
 # Immutable Passport Demo
 
-This project demonstrates the integration of Immutable Passport authentication and wallet functionality using SvelteKit.
+A demo application showcasing Immutable Passport authentication and wallet functionality using SvelteKit.
 
 ## Features
 
 - Passport Authentication
 - Wallet Connection
-- Token Management (ID Token, Access Token)
+- Token Management
 - User Information
 - Transaction Management
 - JSON-RPC API Methods
 
 ## Prerequisites
 
-- Node.js (v16 or later)
+- Node.js v20 or later
 - npm or yarn
 - Immutable Developer Hub Account
 
-## Setup
+## Setup Instructions
 
-1. Clone the repository:
+1. Clone the repository
 ```bash
-git clone <repository-url>
-cd passport-demo
+git clone https://github.com/zanneee/little-passport-demo.git
+cd little-passport-demo
 ```
 
-2. Install dependencies:
+2. Install dependencies
 ```bash
-npm install
-# or
-yarn
+yarn install
 ```
 
-3. Configure environment variables:
+3. Configure Environment Variables
    - Copy `.env.example` to `.env`
-   - Fill in your Immutable Passport credentials:
-     - `VITE_IMMUTABLE_CLIENT_ID`: Your Immutable client ID
-     - `VITE_IMMUTABLE_PUBLISHABLE_KEY`: Your publishable key
-     - `VITE_IMMUTABLE_ENVIRONMENT`: 'SANDBOX' or 'PRODUCTION'
-     - `VITE_IMMUTABLE_REDIRECT_URI`: Your application's redirect URI
-     - `VITE_IMMUTABLE_LOGOUT_URI`: Your application's logout redirect URI
+   - Set up your Immutable Hub project and get your API keys by following the [official setup guide](https://docs.immutable.com/tutorials/zkEVM/build-web-game/setting-up)
+   - Update the following variables in your `.env` file:
+     ```
+     VITE_IMMUTABLE_CLIENT_ID=         # Your Client ID from Immutable Hub
+     VITE_IMMUTABLE_PUBLISHABLE_KEY=   # Your Publishable Key
+     VITE_IMMUTABLE_ENVIRONMENT=SANDBOX # or PRODUCTION
+     VITE_IMMUTABLE_REDIRECT_URI=http://localhost:5173
+     VITE_IMMUTABLE_LOGOUT_URI=http://localhost:5173
+     ```
 
-4. Start the development server:
+4. Start the development server
 ```bash
-npm run dev
-# or
 yarn dev
 ```
 
-5. Open your browser and navigate to `http://localhost:5173`
-
-## Environment Variables
-
-Create a `.env` file in the root directory with the following variables:
-
-```env
-VITE_IMMUTABLE_CLIENT_ID=your_client_id_here
-VITE_IMMUTABLE_PUBLISHABLE_KEY=your_publishable_key_here
-VITE_IMMUTABLE_ENVIRONMENT=SANDBOX
-VITE_IMMUTABLE_REDIRECT_URI=http://localhost:5173
-VITE_IMMUTABLE_LOGOUT_URI=http://localhost:5173
-```
+Visit `http://localhost:5173` to see the application running.
 
 ## Development
 
-The main application code is in `src/routes/+page.svelte`. This file contains:
-- Passport initialization
-- Authentication handling
+The main application code is located in `src/routes/+page.svelte`. This file contains the implementation of:
+- Passport authentication
 - Wallet connection
-- Transaction management
-- JSON-RPC API method implementations
+- Transaction handling
+- User information display
 
 ## License
 
