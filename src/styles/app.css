@@ -1,0 +1,299 @@
+/* Base Styles */
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Layout */
+.app-container {
+  display: flex;
+  gap: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 250px;
+  flex-shrink: 0;
+  background-color: #f8f9fa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  height: fit-content;
+  position: sticky;
+  top: 2rem;
+}
+
+.sidebar h2 {
+  font-weight: 600;
+}
+
+.menu-section {
+  margin-bottom: 1.5rem;
+}
+
+.menu-section h3 {
+  color: #4a5568;
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  font-weight: 500;
+}
+
+.menu-section button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: 0.5rem 0;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+/* Main Content */
+.main-content {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.connected {
+  margin-top: 2rem;
+}
+
+/* Connection Status */
+.connection-status {
+  background-color: #e8f5e9;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.connection-status .address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.8rem;
+  word-break: break-all;
+  color: #666;
+  background-color: #fff;
+  padding: 0.5rem;
+  border-radius: 4px;
+  margin: 0;
+}
+
+/* Buttons */
+.logout-button {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.logout-button:hover {
+  background-color: #c82333;
+}
+
+.passport-button {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.passport-button:hover {
+  opacity: 0.9;
+}
+
+.passport-button img {
+  width: 200px;
+  height: auto;
+}
+
+/* Results Display */
+.results {
+  margin-top: 2rem;
+}
+
+.token-container {
+  margin: 1rem 0;
+  padding: 1rem;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.token-container h3 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+}
+
+.token {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  padding: 0.5rem;
+  background-color: #fff;
+  border-radius: 4px;
+}
+
+/* Transaction Form */
+.transaction-form {
+  background-color: #fff;
+  padding: 1rem;
+  border-radius: 4px;
+  margin: 1rem 0;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9rem;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #4a5568;
+}
+
+.form-group input::placeholder {
+  color: #666;
+  opacity: 0.7;
+}
+
+.form-group input:focus::placeholder {
+  color: transparent;
+}
+
+.form-group small {
+  display: block;
+  color: #666;
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+}
+
+/* Transaction Result */
+.transaction-result {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #ddd;
+}
+
+.transaction-result h4 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+}
+
+.submit-transaction {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.submit-transaction:hover {
+  background-color: #45a049;
+}
+
+/* Explorer Link */
+.explorer-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+  background-color: #fff;
+  padding: 0.5rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.explorer-link:hover {
+  background-color: #f0f0f0;
+}
+
+.external-link-icon {
+  color: #666;
+  font-size: 1rem;
+}
+
+.explorer-link pre {
+  margin: 0;
+  flex-grow: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Error States */
+.error {
+  color: #dc3545;
+  background-color: #fff5f5;
+}
+
+.note {
+  margin-top: 1rem;
+  padding: 1.2rem;
+  background-color: #f8f9fa;
+  border-left: 4px solid #1a3a3a;
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.note-icon {
+  font-size: 1.2rem;
+  color: #1a3a3a;
+  flex-shrink: 0;
+}
+
+.note p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #1a3a3a;
+}
+
+.note strong {
+  color: #0d1d1d;
+}
+
+.note .inline-code {
+  background-color: rgba(26, 58, 58, 0.1);
+  padding: 0.2rem 0.4rem;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9em;
+  color: #1a3a3a;
+} 
