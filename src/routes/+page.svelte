@@ -4,7 +4,6 @@
   import { jwtDecode } from 'jwt-decode';
   import { BrowserProvider, Contract, ethers } from 'ethers';
   import type { Eip1193Provider } from 'ethers';
-  import '../styles/app.css';
 
   // Types
   interface UserProfile {
@@ -63,8 +62,8 @@
 
   // Constants
   const DEFAULT_TRANSACTION = {
-    to: '0xacbe301e5b46f4dd532b74e209adac0c06d42f8c',
-    value: '1000000000000000000'  // 1 IMX 
+    to: '0xbbb4e3fa3e7efed0834e4eaeb6beeda635d67da2',
+    value: '1000000000000000'
   };
 
   const ERROR_MESSAGES = {
@@ -91,6 +90,7 @@
   let showBlockByHashForm = false;
   let showTransactionByHashForm = false;
   let showSignTypedDataForm = false;
+  let showPersonalSignForm = false;
 
   let tokenState: TokenState = {
     idToken: null,
@@ -110,14 +110,7 @@
     sending: false
   };
 
-  let transactionParams: {
-    to: string;
-    value: string;
-    data: string;
-    gasLimit?: string;
-    maxFeePerGas?: string;
-    maxPriorityFeePerGas?: string;
-  } = {
+  let transactionParams = {
     to: '',
     value: '',
     data: '',
@@ -129,14 +122,16 @@
   let storageParams = {
     address: '',
     slot: '0x0',
-    blockNumber: 'latest'
+    blockParam: 'latest',
+    customBlockNumber: ''
   };
 
   let estimateGasParams = {
     to: '',
     data: '0x',
     value: '0x0',
-    blockNumber: 'latest'
+    blockParam: 'latest',
+    customBlockNumber: ''
   };
 
   let callParams = {
@@ -216,7 +211,11 @@
     fromAddress: ''  // Add signer address field
   };
 
-  let showPersonalSignForm = false;
+  let balanceParams = {
+    address: '',
+    blockParam: 'latest',
+    customBlockNumber: ''
+  };
 
   // 네트워크 설정
   const NETWORK_CONFIG = {
@@ -395,7 +394,21 @@
   }
 
   function addToDisplayOrder(type: string) {
-    // Clear previous results and show only the current one
+    // Reset form visibility flags except for the current form
+    if (type !== 'sendTransaction') showTransactionForm = false;
+    if (type !== 'blockByHash') showBlockByHashForm = false;
+    if (type !== 'transactionByHash') showTransactionByHashForm = false;
+    if (type !== 'signTypedData') showSignTypedDataForm = false;
+    if (type !== 'personalSign') showPersonalSignForm = false;
+
+    // Show form for specific types
+    if (type === 'sendTransaction') showTransactionForm = true;
+    if (type === 'blockByHash') showBlockByHashForm = true;
+    if (type === 'transactionByHash') showTransactionByHashForm = true;
+    if (type === 'signTypedData') showSignTypedDataForm = true;
+    if (type === 'personalSign') showPersonalSignForm = true;
+    
+    // Set current type
     displayOrder = [type];
   }
 
@@ -478,79 +491,122 @@
     }
   }
 
+  function getBlockParameter(param: string, customNumber: string): string {
+    let blockParameter = param;
+    if (blockParameter === 'number') {
+      if (!customNumber) {
+        throw new Error('Block number is required when "Block number" is selected');
+      }
+      // 16진수 또는 10진수 입력 처리
+      if (customNumber.startsWith('0x')) {
+        blockParameter = customNumber;
+      } else if (/^\d+$/.test(customNumber)) {
+        blockParameter = '0x' + Number(customNumber).toString(16);
+      } else {
+        throw new Error('Invalid block number format. Use decimal or hex (0x) format');
+      }
+    }
+    return blockParameter;
+  }
+
   async function handleRpcCall(method: string) {
     try {
       switch (method) {
-        case 'eth_sendTransaction':
-          await sendTransaction();
-          break;
         case 'eth_requestAccounts':
           const requestAccountsPayload = { method: 'eth_requestAccounts' };
           const accounts = await passportProvider.request(requestAccountsPayload);
           result = {
+            method: 'eth_requestAccounts',
+            description: "This method attempts to authenticate the user and initialises their Passport wallet before returning an array of wallet addresses. If the user does not already have an active session with Passport, then they will be prompted to log in.",
             request: requestAccountsPayload,
             response: accounts,
             formatted: JSON.stringify(accounts, null, 2)
           };
           addToDisplayOrder('requestAccounts');
           break;
+
         case 'eth_accounts':
           const accountsPayload = { method: 'eth_accounts' };
           const accountsList = await passportProvider.request(accountsPayload);
           result = {
+            method: 'eth_accounts',
+            description: "Returns the list of Passport accounts that the user has authorised to connect to the dApp.",
             request: accountsPayload,
             response: accountsList,
-            title: 'Passport Accounts',
-            description: 'List of authorized Passport wallet addresses',
-            accounts: accountsList
+            formatted: JSON.stringify(accountsList, null, 2)
           };
           addToDisplayOrder('accounts');
           break;
+
         case 'eth_chainId':
           const chainIdPayload = { method: 'eth_chainId' };
           const chainId = await passportProvider.request(chainIdPayload);
           result = {
+            method: 'eth_chainId',
+            description: "Returns the current chain id.",
             request: chainIdPayload,
             response: chainId,
-            formatted: `Chain ID: ${chainId} (Decimal: ${parseInt(chainId, 16)}) - Immutable zkEVM Testnet`
+            formatted: `Chain ID: ${chainId} (Decimal: ${parseInt(chainId, 16)}) - Immutable zkEVM ${currentNetwork === 'testnet' ? 'Testnet' : 'Mainnet'}`
           };
           addToDisplayOrder('chainId');
           break;
+
         case 'eth_blockNumber':
           const blockNumberPayload = { method: 'eth_blockNumber' };
           const blockNumber = await passportProvider.request(blockNumberPayload);
           result = {
+            method: 'eth_blockNumber',
+            description: "Returns the number of most recent block.",
             request: blockNumberPayload,
             response: blockNumber,
             formatted: blockNumber
           };
           addToDisplayOrder('blockNumber');
           break;
+
         case 'eth_gasPrice':
           const gasPricePayload = { method: 'eth_gasPrice' };
           const gasPrice = await passportProvider.request(gasPricePayload);
           result = {
+            method: 'eth_gasPrice',
+            description: "Returns the current gas price in wei.",
             request: gasPricePayload,
             response: gasPrice,
             formatted: `${(Number(gasPrice) / 1_000_000_000).toFixed(9)} Gwei`
           };
           addToDisplayOrder('gasPrice');
           break;
+
         case 'eth_getBalance':
-          if (!userAddress) return;
+          // 주소가 비어있으면 현재 로그인된 주소 사용
+          if (!balanceParams.address && userAddress) {
+            balanceParams.address = userAddress;
+          }
+          
+          if (!balanceParams.address) {
+            throw new Error('Address is required');
+          }
+
+          const balanceBlockParam = getBlockParameter(balanceParams.blockParam, balanceParams.customBlockNumber);
           const requestPayload = { 
             method: 'eth_getBalance',
-            params: [userAddress, 'latest']
+            params: [
+              balanceParams.address,
+              balanceBlockParam
+            ]
           };
           const balance = await passportProvider.request(requestPayload);
           const balanceInEther = ethers.formatEther(balance);
           result = {
+            method: 'eth_getBalance',
+            description: "Returns the balance of the account of given address in wei.",
             request: requestPayload,
             response: balance,
             formatted: `${balanceInEther} tIMX (${balance} Wei)`
           };
           addToDisplayOrder('balance');
           break;
+
         case 'eth_getTransactionCount':
           addToDisplayOrder('transactionCount');
           
@@ -577,6 +633,8 @@
             const txCount = await passportProvider.request(txCountPayload);
             const count = parseInt(txCount, 16);
             result = {
+              method: 'eth_getTransactionCount',
+              description: "Returns the number of transactions sent from an address.",
               request: txCountPayload,
               response: txCount,
               formatted: `Number of transactions sent from ${address}: ${count.toLocaleString()}`
@@ -588,43 +646,88 @@
             };
           }
           break;
+
         case 'eth_getStorageAt':
+          // 주소가 비어있으면 현재 로그인된 주소 사용
+          if (!storageParams.address && userAddress) {
+            storageParams.address = userAddress;
+          }
+
+          if (!storageParams.address) {
+            throw new Error('Address is required');
+          }
+
+          // slot이 비어있으면 기본값 사용
+          if (!storageParams.slot) {
+            storageParams.slot = '0x0';
+          }
+
+          const storageBlockParam = getBlockParameter(storageParams.blockParam, storageParams.customBlockNumber);
           const storagePayload = { 
             method: 'eth_getStorageAt',
             params: [
-              storageParams.address || userAddress,
+              storageParams.address,
               storageParams.slot,
-              storageParams.blockNumber
+              storageBlockParam
             ]
           };
           const storageValue = await passportProvider.request(storagePayload);
           result = {
+            method: 'eth_getStorageAt',
+            description: "Returns the value from a storage position at a given address.",
             request: storagePayload,
             response: storageValue,
             formatted: `Storage Value: ${storageValue}`
           };
           addToDisplayOrder('storage');
           break;
+
         case 'eth_estimateGas':
-          const estimateGasPayload = {
-            method: 'eth_estimateGas',
-            params: [
-              {
-                to: estimateGasParams.to || userAddress,
-                data: estimateGasParams.data,
-                value: estimateGasParams.value
-              },
-              estimateGasParams.blockNumber
-            ]
-          };
-          const estimatedGas = await passportProvider.request(estimateGasPayload);
-          result = {
-            request: estimateGasPayload,
-            response: estimatedGas,
-            formatted: `Estimated Gas: ${parseInt(estimatedGas, 16).toLocaleString()} units`
-          };
-          addToDisplayOrder('estimateGas');
+          if (!displayOrder.includes('estimateGas')) {
+            addToDisplayOrder('estimateGas');
+            result = null;  // Clear previous result
+            return;
+          }
+          
+          try {
+            // 주소가 비어있으면 현재 로그인된 주소 사용
+            if (!estimateGasParams.to && userAddress) {
+              estimateGasParams.to = userAddress;
+            }
+
+            if (!estimateGasParams.to) {
+              throw new Error('Destination address (to) is required');
+            }
+
+            const estimateBlockParam = getBlockParameter(estimateGasParams.blockParam, estimateGasParams.customBlockNumber);
+            const estimateGasPayload = {
+              method: 'eth_estimateGas',
+              params: [
+                {
+                  to: estimateGasParams.to,
+                  data: estimateGasParams.data || '0x',
+                  value: estimateGasParams.value || '0x0'
+                },
+                estimateBlockParam
+              ]
+            };
+            const estimatedGas = await passportProvider.request(estimateGasPayload);
+            result = {
+              method: 'eth_estimateGas',
+              description: "Returns an estimate of the gas that would be used in a transaction with the given parameters.",
+              request: estimateGasPayload,
+              response: estimatedGas,
+              formatted: `Estimated Gas: ${parseInt(estimatedGas, 16).toLocaleString()} units`
+            };
+          } catch (error: any) {
+            result = {
+              method: 'eth_estimateGas',
+              description: "Returns an estimate of the gas that would be used in a transaction with the given parameters.",
+              error: error.message || 'Failed to estimate gas'
+            };
+          }
           break;
+
         case 'eth_call':
           const callPayload = {
             method: 'eth_call',
@@ -639,16 +742,25 @@
           };
           const callResult = await passportProvider.request(callPayload);
           result = {
+            method: 'eth_call',
+            description: "Executes a new message call immediately without creating a transaction on the blockchain.",
             request: callPayload,
             response: callResult,
             formatted: `Return Value: ${callResult}`
           };
           addToDisplayOrder('call');
           break;
+
         case 'eth_getBlockByHash':
           if (!showBlockByHashForm) {
             showBlockByHashForm = true;
-            result = null;
+            result = {
+              method: 'eth_getBlockByHash',
+              description: "Returns information about a block by hash.",
+              request: null,
+              response: null,
+              formatted: null
+            };
             addToDisplayOrder('blockByHash');
             return;
           }
@@ -699,7 +811,8 @@
                 `Gas Limit: ${formattedBlockByHash.gasLimit}\n` +
                 `Miner: ${formattedBlockByHash.miner}\n` +
                 `Size: ${formattedBlockByHash.size} bytes\n\n` +
-                `Transactions:\n${formattedBlockByHash.transactions}`
+                `Transactions:\n${formattedBlockByHash.transactions}`,
+              note: 'Note: This result is based on the block information at the time of the request. The actual block content may change after the request.'
             };
           } catch (error: any) {
             console.error('Error getting block by hash:', error);
@@ -709,6 +822,7 @@
           }
           addToDisplayOrder('blockByHash');
           break;
+
         case 'eth_getBlockByNumber':
           try {
             const blockNumberParam = blockByNumberParams.blockNumber === 'latest' ? 
@@ -746,6 +860,8 @@
             };
 
             result = {
+              method: 'eth_getBlockByNumber',
+              description: "Returns information about a block by number.",
               request: blockNumberPayload,
               response: blockByNumber,
               formatted: `Block #${formattedBlockByNumber.number}\n` +
@@ -756,7 +872,8 @@
                 `Gas Limit: ${formattedBlockByNumber.gasLimit}\n` +
                 `Miner: ${formattedBlockByNumber.miner}\n` +
                 `Size: ${formattedBlockByNumber.size} bytes\n\n` +
-                `Transactions:\n${formattedBlockByNumber.transactions}`
+                `Transactions:\n${formattedBlockByNumber.transactions}`,
+              note: 'Note: This result is based on the block information at the time of the request. The actual block content may change after the request.'
             };
           } catch (error: any) {
             console.error('Error getting block:', error);
@@ -766,10 +883,17 @@
           }
           addToDisplayOrder('blockByNumber');
           break;
+
         case 'eth_getTransactionByHash':
           if (!showTransactionByHashForm) {
             showTransactionByHashForm = true;
-            result = null;
+            result = {
+              method: 'eth_getTransactionByHash',
+              description: "Returns the information about a transaction requested by transaction hash.",
+              request: null,
+              response: null,
+              formatted: null
+            };
             addToDisplayOrder('transactionByHash');
             return;
           }
@@ -825,7 +949,8 @@
                 `Gas Price: ${formattedTx.gasPrice}\n` +
                 `Nonce: ${formattedTx.nonce}\n` +
                 `Transaction Index: ${formattedTx.transactionIndex}\n` +
-                `Input Data: ${formattedTx.input}`
+                `Input Data: ${formattedTx.input}`,
+              note: 'Note: This result is based on the transaction information at the time of the request. The actual transaction content may change after the request.'
             };
           } catch (error: any) {
             console.error('Error getting transaction:', error);
@@ -835,6 +960,7 @@
           }
           addToDisplayOrder('transactionByHash');
           break;
+
         case 'eth_getTransactionReceipt':
           // 먼저 UI를 표시하기 위해 displayOrder 업데이트
           addToDisplayOrder('transactionReceipt');
@@ -861,6 +987,8 @@
             }
 
             result = {
+              method: 'eth_getTransactionReceipt',
+              description: "Returns the receipt of a transaction requested by transaction hash.",
               request: txReceiptPayload,
               response: txReceipt,
               formatted: `Transaction Receipt:\n` +
@@ -870,7 +998,8 @@
                 `Block Hash: ${txReceipt.blockHash}\n` +
                 `Transaction Index: ${parseInt(txReceipt.transactionIndex, 16)}\n` +
                 `Contract Address: ${txReceipt.contractAddress || 'N/A'}\n` +
-                `Logs: ${txReceipt.logs.length} events`
+                `Logs: ${txReceipt.logs.length} events`,
+              note: 'Note: This result is based on the transaction receipt information at the time of the request. The actual receipt content may change after the request.'
             };
           } catch (error: any) {
             console.error('Error getting transaction receipt:', error);
@@ -879,6 +1008,7 @@
             };
           }
           break;
+
         case 'eth_getCode':
           addToDisplayOrder('getCode');
           
@@ -921,6 +1051,8 @@
             const byteLength = contractCode === '0x' ? 0 : (contractCode.length - 2) / 2;
             
             result = {
+              method: 'eth_getCode',
+              description: "Returns the bytecode of a smart contract at a given address.",
               request: codePayload,
               response: contractCode,
               formatted: contractCode === '0x' 
@@ -929,7 +1061,8 @@
                   `Bytecode Length: ${byteLength} bytes\n` +
                   `Solidity Version: ${getSolidityVersion(contractCode)}\n` +
                   `Bytecode:\n${contractCode.slice(0, 100)}...\n` +
-                  `(Full bytecode available in Response Payload)`
+                  `(Full bytecode available in Response Payload)`,
+              note: 'Note: This result is based on the contract code information at the time of the request. The actual code content may change after the request.'
             };
           } catch (error: any) {
             console.error('Error getting contract code:', error);
@@ -938,12 +1071,17 @@
             };
           }
           break;
+
         case 'eth_signTypedData_v4':
           if (!showSignTypedDataForm) {
             showSignTypedDataForm = true;
-            // 현재 연결된 지갑 주소를 수신자 주소로 설정
-            signTypedDataParams.typedData.message.to.wallet = userAddress || '';
-            result = null;
+            result = {
+              method: 'eth_signTypedData_v4',
+              description: "Enables passport users to sign EIP-712 structured messages off-chain.",
+              request: null,
+              response: null,
+              formatted: null
+            };
             addToDisplayOrder('signTypedData');
             return;
           }
@@ -999,7 +1137,8 @@
                 `• Primary Type: ${signTypedDataParams.typedData.primaryType}\n` +
                 `• Types Hash: Mail(Person from,Person to,string contents)\n` +
                 `• Person Type: Person(string name,address wallet)\n` +
-                `\nNote: This signature can be verified on-chain using EIP-712 verification methods.`
+                `\nNote: This signature can be verified on-chain using EIP-712 verification methods.`,
+              note: 'Note: This result is based on the signature information at the time of the request. The actual signature content may change after the request.'
             };
           } catch (error: any) {
             console.error('Error signing typed data:', error);
@@ -1008,11 +1147,18 @@
             };
           }
           break;
+
         case 'personal_sign':
           if (!showPersonalSignForm) {
             showPersonalSignForm = true;
             personalSignParams.fromAddress = userAddress || '';  // Initialize with current connected address
-            result = null;
+            result = {
+              method: 'personal_sign',
+              description: "Enables passport users to sign ERC-191 personal messages off-chain.",
+              request: null,
+              response: null,
+              formatted: null
+            };
             addToDisplayOrder('personalSign');
             return;
           }
@@ -1057,7 +1203,8 @@
                 `• R: ${r}\n` +
                 `• S: ${s}\n` +
                 `• V: ${v}\n` +
-                `\nNote: This signature follows ERC-191 personal_sign standard.`
+                `\nNote: This signature follows ERC-191 personal_sign standard.`,
+              note: 'Note: This result is based on the signature information at the time of the request. The actual signature content may change after the request.'
             };
           } catch (error: any) {
             console.error('Error signing message:', error);
@@ -1066,36 +1213,35 @@
             };
           }
           break;
+
+        case 'eth_sendTransaction':
+          showTransactionForm = true;
+          result = {
+            method: 'eth_sendTransaction',
+            description: "Creates new message call transaction or a contract creation, if the data field contains code.",
+            request: null,
+            response: null,
+            formatted: null
+          };
+          transactionParams = {
+            to: '',
+            value: '',
+            data: '',
+            gasLimit: '',
+            maxFeePerGas: '',
+            maxPriorityFeePerGas: ''
+          };
+          addToDisplayOrder('sendTransaction');
+          return;
       }
     } catch (error: any) {
       console.error(`RPC call failed (${method}):`, error);
-      if (error.code === 4001) {
-        console.error('User rejected request');
-      }
       result = {
-        error: true,
-        message: error.message || 'Unknown error occurred'
+        method,
+        error: error.message || 'Unknown error occurred'
       };
+      addToDisplayOrder(method.replace('eth_', ''));
     }
-  }
-
-  async function handleSendTransaction() {
-    if (!showTransactionForm) {
-      showTransactionForm = true;
-      result = null;
-      transactionParams = {
-        to: '',
-        value: '',
-        data: '',
-        gasLimit: '',
-        maxFeePerGas: '',
-        maxPriorityFeePerGas: ''
-      };
-      addToDisplayOrder('sendTransaction');
-      return;
-    }
-
-    await sendTransaction();
   }
 
   async function sendTransaction() {
@@ -1120,10 +1266,22 @@
         maxPriorityFeePerGas: transactionParams.maxPriorityFeePerGas ? ethers.parseUnits(transactionParams.maxPriorityFeePerGas, 'gwei') : undefined,
       };
       
-      result = 'Sending transaction...';
+      result = {
+        method: 'eth_sendTransaction',
+        description: "Creates new message call transaction or a contract creation, if the data field contains code.",
+        request: tx,
+        response: 'Sending transaction...',
+        formatted: 'Sending transaction...'
+      };
       
       const transactionResponse = await signer.sendTransaction(tx);
-      result = `Transaction Hash: ${transactionResponse.hash}\nWaiting for confirmation...`;
+      result = {
+        method: 'eth_sendTransaction',
+        description: "Creates new message call transaction or a contract creation, if the data field contains code.",
+        request: tx,
+        response: transactionResponse,
+        formatted: `Transaction Hash: ${transactionResponse.hash}\nWaiting for confirmation...`
+      };
       
       const receipt = await transactionResponse.wait();
       if (!receipt) {
@@ -1146,13 +1304,27 @@
         gasFees: `Base: ${gasPriceInGwei.toFixed(9)} Gwei | Max: ${maxFeePerGasInGwei?.toFixed(9) || gasPriceInGwei.toFixed(9)} Gwei | Max priority: ${maxPriorityFeePerGasInGwei?.toFixed(0) || gasPriceInGwei.toFixed(0)} Gwei`,
       };
 
-      result = JSON.stringify(details);
+      result = {
+        method: 'eth_sendTransaction',
+        description: "Creates new message call transaction or a contract creation, if the data field contains code.",
+        request: tx,
+        response: receipt,
+        formatted: JSON.stringify(details, null, 2)
+      };
     } catch (error: unknown) {
       if (error instanceof Error && error.message.includes('DID Token')) {
-        result = 'Error: Please login again. Your session might have expired.';
+        result = {
+          method: 'eth_sendTransaction',
+          description: "Creates new message call transaction or a contract creation, if the data field contains code.",
+          error: 'Error: Please login again. Your session might have expired.'
+        };
         await handleLogout();
       } else {
-        result = `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+        result = {
+          method: 'eth_sendTransaction',
+          description: "Creates new message call transaction or a contract creation, if the data field contains code.",
+          error: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+        };
       }
     }
   }
@@ -1204,1312 +1376,335 @@
   }
 </script>
 
-<main>
-  <div class="app-container">
-    <div class="sidebar">
-      {#if isConnected}
-        <div class="connection-status">
-          {#if userAddress}
-            <p class="address">Address: {userAddress}</p>
-          {/if}
-          <button class="logout-button" on:click={handleLogout}>Logout</button>
-        </div>
-      {/if}
-      <div class="menu-section">
-        <h3>Identity</h3>
-        <button on:click={handleGetIdToken}>Get ID Token</button>
-        <button on:click={handleGetAccessToken}>Get Access Token</button>
-        <button on:click={handleGetUserInfo}>Get User Info</button>
-        <button on:click={handleGetLinkedAddresses}>Get Linked Addresses</button>
-      </div>
-      <div class="menu-section">
-        <h3>JSON-RPC API</h3>
-        <div class="network-selector">
-          <button 
-            class:active={currentNetwork === 'testnet'} 
-            on:click={() => switchNetwork('testnet')}
-          >
-            Testnet
-          </button>
-          <button 
-            class:active={currentNetwork === 'mainnet'} 
-            on:click={() => switchNetwork('mainnet')}
-          >
-            Mainnet
-          </button>
-        </div>
-        <button on:click={() => handleRpcCall('eth_requestAccounts')}>eth_requestAccounts</button>
-        <button on:click={() => {
-          showTransactionForm = true;
-          result = null;
-          addToDisplayOrder('sendTransaction');
-        }}>eth_sendTransaction</button>
-        <button on:click={() => handleRpcCall('eth_accounts')}>eth_accounts</button>
-        <button on:click={() => handleRpcCall('eth_gasPrice')}>eth_gasPrice</button>
-        <button on:click={() => handleRpcCall('eth_getBalance')}>eth_getBalance</button>
-        <button on:click={() => handleRpcCall('eth_getStorageAt')}>eth_getStorageAt</button>
-        <button on:click={() => handleRpcCall('eth_estimateGas')}>eth_estimateGas</button>
-        <button on:click={() => handleRpcCall('eth_call')}>eth_call</button>
-        <button on:click={() => handleRpcCall('eth_getBlockByHash')}>eth_getBlockByHash</button>
-        <button on:click={() => handleRpcCall('eth_getBlockByNumber')}>eth_getBlockByNumber</button>
-        <button on:click={() => handleRpcCall('eth_getTransactionByHash')}>eth_getTransactionByHash</button>
-        <button on:click={() => handleRpcCall('eth_getTransactionReceipt')}>eth_getTransactionReceipt</button>
-        <button on:click={() => handleRpcCall('eth_getTransactionCount')}>eth_getTransactionCount</button>
-        <button on:click={() => handleRpcCall('eth_getCode')}>eth_getCode</button>
-        <button on:click={() => handleRpcCall('eth_signTypedData_v4')}>eth_signTypedData_v4</button>
-        <button on:click={() => handleRpcCall('personal_sign')}>personal_sign</button>
-      </div>
-    </div>
+<div class="min-h-screen bg-gray-50">
+  <div class="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex gap-6">
+      <!-- Sidebar -->
+      <aside class="w-64 flex-none">
+        <div class="bg-white rounded-lg shadow-sm p-6 sticky top-8">
+          <div class="space-y-6">
+            <!-- Connection Status -->
+            {#if isConnected}
+              <div class="bg-emerald-50 rounded-md p-4">
+                <h3 class="text-sm font-medium text-emerald-800 mb-2">Connected</h3>
+                {#if userAddress}
+                  <p class="text-xs font-mono bg-white/50 p-2 rounded break-all text-emerald-600">
+                    {userAddress}
+                  </p>
+                {/if}
+                <button
+                  class="mt-3 w-full bg-red-500 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-600 transition-colors"
+                  on:click={handleLogout}
+                >
+                  Logout
+                </button>
+              </div>
+            {:else}
+              <button
+                class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                on:click={handleLogin}
+              >
+                Connect Wallet
+              </button>
+            {/if}
 
-    <div class="main-content">
-      <h1>Immutable Passport Demo</h1>
-      
-      {#if isConnected}
-        <div class="connected">
-          <div class="results">
-            {#each [...displayOrder].reverse() as type}
-              {#if type === 'requestAccounts'}
-                <div class="token-container">
-                  <h3>Request Accounts</h3>
-                  <div class="api-details">
-                    <h4>Request Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                    <h4>Response Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                    <h4>Formatted Result:</h4>
-                    <pre class="token">{result.formatted}</pre>
-                  </div>
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Returns an array of wallet addresses after authenticating the user and initializing their Passport wallet.</p>
-                  </div>
-                </div>
-              {:else if type === 'chainId'}
-                <div class="token-container">
-                  <h3>Chain ID</h3>
-                  <div class="api-details">
-                    <h4>Request Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                    <h4>Response Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                    <h4>Formatted Result:</h4>
-                    <pre class="token">{result.formatted}</pre>
-                  </div>
-                </div>
-              {:else if type === 'blockNumber'}
-                <div class="token-container">
-                  <h3>Block Number</h3>
-                  <div class="api-details">
-                    <h4>Request Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                    <h4>Response Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                    <h4>Formatted Result:</h4>
-                    <pre class="token">{result.formatted}</pre>
-                  </div>
-                </div>
-              {:else if type === 'blockByNumber'}
-                <div class="token-container">
-                  <h3>Get Block By Number</h3>
-                  <div class="storage-form">
-                    <div class="form-group">
-                      <label for="block-number">Block Number (or 'latest'):</label>
-                      <input
-                        type="text"
-                        id="block-number"
-                        bind:value={blockByNumberParams.blockNumber}
-                        placeholder="latest"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label class="checkbox-label">
-                        <input
-                          type="checkbox"
-                          bind:checked={blockByNumberParams.includeTransactions}
-                        />
-                        Include Full Transactions
-                      </label>
-                    </div>
-                    <div class="button-group">
-                      <button on:click={() => handleRpcCall('eth_getBlockByNumber')}>Get Block</button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="api-details">
-                      <h4>Request Payload:</h4>
-                      <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                      <h4>Response Payload:</h4>
-                      <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                      <h4>Formatted Result:</h4>
-                      <pre class="token">{result.formatted}</pre>
-                      {#if result.response && result.response.hash}
-                        <div class="action-buttons">
-                          <button 
-                            on:click={() => {
-                              blockByHashParams.blockHash = result.response.hash;
-                              handleRpcCall('eth_getBlockByHash');
-                            }}
-                          >
-                            View Block By Hash
-                          </button>
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Returns information about a block by its number. Use 'latest' for the most recent block, or enter a specific block number.</p>
-                    <p>When "Include Full Transactions" is checked, you'll see detailed transaction information including From, To, Value, and Gas.</p>
-                    <p>The timestamp is automatically converted to your local time format.</p>
-                  </div>
-                </div>
-              {:else if type === 'gasPrice'}
-                <div class="token-container">
-                  <h3>Gas Price</h3>
-                  <div class="api-details">
-                    <h4>Request Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                    <h4>Response Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                    <h4>Formatted Result:</h4>
-                    <pre class="token">{result.formatted}</pre>
-                  </div>
-                </div>
-              {:else if type === 'balance'}
-                <div class="token-container">
-                  <h3>Balance</h3>
-                  <div class="api-details">
-                    <h4>Request Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                    <h4>Response Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                    <h4>Formatted Result:</h4>
-                    <pre class="token">{result.formatted}</pre>
-                  </div>
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Shows the current balance of your connected wallet address with request/response details.</p>
-                  </div>
-                </div>
-              {:else if type === 'transactionCount'}
-                <div class="token-container">
-                  <h3>Get Transaction Count</h3>
-                  <div class="storage-form">
-                    <div class="form-group">
-                      <label for="count-address">Address:</label>
-                      <input
-                        type="text"
-                        id="count-address"
-                        bind:value={transactionCountParams.address}
-                        placeholder={userAddress || '0x...'}
-                      />
-                      <small class="helper-text">The address to get the number of transactions from</small>
-                    </div>
-                    <div class="form-group">
-                      <label for="count-block">Block Number (optional):</label>
-                      <input
-                        type="text"
-                        id="count-block"
-                        bind:value={transactionCountParams.blockNumber}
-                        placeholder="latest"
-                      />
-                      <small class="helper-text">Block number (e.g. 1000) or 'latest', 'pending', 'earliest'. Defaults to 'latest'</small>
-                    </div>
-                    <div class="button-group">
-                      <button on:click={() => handleRpcCall('eth_getTransactionCount')}>
-                        Get Transaction Count
-                      </button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="api-details">
-                      {#if result.error}
-                        <div class="error-message">
-                          <span class="error-icon">⚠️</span>
-                          {result.error}
-                        </div>
-                      {:else}
-                        <h4>Request Payload:</h4>
-                        <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                        <h4>Response Payload:</h4>
-                        <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                        <h4>Formatted Result:</h4>
-                        <pre class="token">{result.formatted}</pre>
-                      {/if}
-                    </div>
-                  {/if}
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Returns the number of transactions sent from an address. The block number parameter is optional - if omitted, the latest block is used.</p>
-                  </div>
-                </div>
-              {:else if type === 'idToken' && tokenState.idToken}
-                <div class="token-container">
-                  <h3>ID Token</h3>
-                  <pre class="token">{tokenState.idToken}</pre>
-                  {#if tokenState.decodedIdToken}
-                    <div class="decoded-token">
-                      <h4>Decoded ID Token</h4>
-                      <pre class="token">{JSON.stringify(tokenState.decodedIdToken, null, 2)}</pre>
-                      <div class="note">
-                        <span class="note-icon">💡</span>
-                        <p>The <code class="inline-code">sub</code> attribute will uniquely identify the Passport user. If your decoded token does not look like the above, double check that you have decoded the ID token and not the Access token.</p>
-                      </div>
-                    </div>
-                  {/if}
-                </div>
-              {:else if type === 'accessToken' && tokenState.accessToken}
-                <div class="token-container">
-                  <h3>Access Token</h3>
-                  <pre class="token">{tokenState.accessToken}</pre>
-                  {#if tokenState.decodedAccessToken}
-                    <div class="decoded-token">
-                      <h4>Decoded Access Token</h4>
-                      <pre class="token">{JSON.stringify(tokenState.decodedAccessToken, null, 2)}</pre>
-                      <div class="note">
-                        <span class="note-icon">💡</span>
-                        <p>The <code class="inline-code">sub</code> attribute will uniquely identify the Passport user. If your decoded token does not look like the above, double check that you have decoded the ID token and not the Access token.</p>
-                      </div>
-                    </div>
-                  {/if}
-                </div>
-              {:else if type === 'userInfo' && userInfo}
-                <div class="token-container">
-                  <h3>User Information</h3>
-                  <div class="user-info">
-                    {#if userInfo.email}
-                      <p><strong>Email:</strong> {userInfo.email}</p>
-                    {/if}
-                    <p><strong>User ID (<code class="inline-code">sub</code>):</strong> {userInfo.sub}</p>
-                    {#if userInfo.nickname}
-                      <p><strong>Nickname:</strong> {userInfo.nickname}</p>
-                    {/if}
-                  </div>
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p><strong>Apple Social Login Email Masking:</strong> If a user logs in through Apple and chooses to mask their email address, the email will appear as <code class="inline-code">xyz@privaterelay.appleid.com</code>. This masked email prevents direct communication with users. Please consider this limitation when implementing Apple Social Login.</p>
-                  </div>
-                </div>
-              {:else if type === 'linkedAddresses' && linkedAddresses}
-                <div class="token-container">
-                  <h3>Linked Addresses</h3>
-                  <div class="user-info">
-                    {#if linkedAddresses.length > 0}
-                      <ul class="address-list">
-                        {#each linkedAddresses as address}
-                          <li>{address}</li>
-                        {/each}
-                      </ul>
-                    {:else}
-                      <p>No linked addresses found.</p>
-                    {/if}
-                  </div>
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>These are the external wallets that the user has linked to their Passport account via the Dashboard.</p>
-                  </div>
-                </div>
-              {:else if type === 'sendTransaction'}
-                <div class="token-container">
-                  <h3>Send Transaction</h3>
-                  <div class="transaction-form">
-                    <div class="form-group">
-                      <label for="to">To Address:</label>
-                      <input
-                        type="text"
-                        id="to"
-                        bind:value={transactionParams.to}
-                        placeholder={DEFAULT_TRANSACTION.to}
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="value">Value (IMX):</label>
-                      <input
-                        type="text"
-                        id="value"
-                        bind:value={transactionParams.value}
-                        placeholder={DEFAULT_TRANSACTION.value}
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="data">Data (hex):</label>
-                      <input
-                        type="text"
-                        id="data"
-                        bind:value={transactionParams.data}
-                        placeholder="0x"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="gasLimit">Gas Limit:</label>
-                      <input
-                        type="text"
-                        id="gasLimit"
-                        bind:value={transactionParams.gasLimit}
-                        placeholder="21000"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="maxFeePerGas">Max Fee Per Gas (gwei):</label>
-                      <input
-                        type="text"
-                        id="maxFeePerGas"
-                        bind:value={transactionParams.maxFeePerGas}
-                        placeholder="30"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="maxPriorityFeePerGas">Max Priority Fee Per Gas (gwei):</label>
-                      <input
-                        type="text"
-                        id="maxPriorityFeePerGas"
-                        bind:value={transactionParams.maxPriorityFeePerGas}
-                        placeholder="1.5"
-                      />
-                    </div>
-                    <div class="button-group">
-                      <button on:click={sendTransaction}>Send</button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="transaction-result">
-                      {#if !result.startsWith('Error:')}
-                        {#if result.includes('blockNumber')}
-                          <h4>Transaction Details:</h4>
-                          {@const details = JSON.parse(result)}
-                          <div class="transaction-details">
-                            <div>
-                              <a 
-                                href="https://explorer.testnet.immutable.com/tx/{details.hash}" 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                class="explorer-link"
-                              >
-                                Transaction Hash: {details.hash}
-                                <span class="external-link-icon">↗</span>
-                              </a>
-                            </div>
-                            <div class="detail-row">
-                              <span class="detail-label">Block Number:</span>
-                              <span class="detail-value">{details.blockNumber}</span>
-                            </div>
-                            <div class="detail-row">
-                              <span class="detail-label">Value:</span>
-                              <span class="detail-value">{details.value}</span>
-                            </div>
-                            <div class="detail-row">
-                              <span class="detail-label">Transaction fee:</span>
-                              <span class="detail-value">{details.transactionFee}</span>
-                            </div>
-                            <div class="detail-row">
-                              <span class="detail-label">Gas price:</span>
-                              <span class="detail-value">{details.gasPrice}</span>
-                            </div>
-                            <div class="detail-row">
-                              <span class="detail-label">Gas usage & limit by txn:</span>
-                              <span class="detail-value">{details.gasUsage}</span>
-                            </div>
-                            <div class="detail-row">
-                              <span class="detail-label">Gas fees (Gwei):</span>
-                              <span class="detail-value">{details.gasFees}</span>
-                            </div>
-                          </div>
-                        {:else}
-                          <h4>Transaction Status:</h4>
-                          <pre class="token">{result}</pre>
-                        {/if}
-                      {:else}
-                        <h4>Error:</h4>
-                        <pre class="token error">{result}</pre>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-              {:else if type === 'accounts'}
-                <div class="token-container">
-                  <h3>{result.title}</h3>
-                  <div class="description">{result.description}</div>
-                  <div class="api-details">
-                    <h4>Request Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                    <h4>Response Payload:</h4>
-                    <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                  </div>
-                  {#if result.accounts && result.accounts.length > 0}
-                    <div class="accounts-list">
-                      {#each result.accounts as account}
-                        <div class="account-item">
-                          <a 
-                            href="https://explorer.testnet.immutable.com/address/{account}" 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            class="explorer-link"
-                          >
-                            {account}
-                            <span class="external-link-icon">↗</span>
-                          </a>
-                        </div>
-                      {/each}
-                    </div>
-                  {:else}
-                    <p>No authorized accounts found.</p>
-                  {/if}
-                </div>
-              {:else if type === 'storage'}
-                <div class="token-container">
-                  <h3>Get Storage At</h3>
-                  <div class="storage-form">
-                    <div class="form-group">
-                      <label for="storage-address">Address:</label>
-                      <input
-                        type="text"
-                        id="storage-address"
-                        bind:value={storageParams.address}
-                        placeholder={userAddress}
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="storage-slot">Storage Slot:</label>
-                      <input
-                        type="text"
-                        id="storage-slot"
-                        bind:value={storageParams.slot}
-                        placeholder="0x0"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="storage-block">Block Number:</label>
-                      <input
-                        type="text"
-                        id="storage-block"
-                        bind:value={storageParams.blockNumber}
-                        placeholder="latest"
-                      />
-                    </div>
-                    <div class="button-group">
-                      <button on:click={() => handleRpcCall('eth_getStorageAt')}>Get Storage</button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="api-details">
-                      <h4>Request Payload:</h4>
-                      <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                      <h4>Response Payload:</h4>
-                      <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                      <h4>Formatted Result:</h4>
-                      <pre class="token">{result.formatted}</pre>
-                    </div>
-                  {/if}
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Returns the value from a storage position at the given address. If no address is provided, the connected wallet address will be used.</p>
-                  </div>
-                </div>
-              {:else if type === 'estimateGas'}
-                <div class="token-container">
-                  <h3>Estimate Gas</h3>
-                  <div class="storage-form">
-                    <div class="form-group">
-                      <label for="estimate-to">To Address:</label>
-                      <input
-                        type="text"
-                        id="estimate-to"
-                        bind:value={estimateGasParams.to}
-                        placeholder={userAddress}
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="estimate-data">Data (hex):</label>
-                      <input
-                        type="text"
-                        id="estimate-data"
-                        bind:value={estimateGasParams.data}
-                        placeholder="0x"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="estimate-value">Value (wei in hex):</label>
-                      <input
-                        type="text"
-                        id="estimate-value"
-                        bind:value={estimateGasParams.value}
-                        placeholder="0x0"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="estimate-block">Block Number:</label>
-                      <input
-                        type="text"
-                        id="estimate-block"
-                        bind:value={estimateGasParams.blockNumber}
-                        placeholder="latest"
-                      />
-                    </div>
-                    <div class="button-group">
-                      <button on:click={() => handleRpcCall('eth_estimateGas')}>Estimate Gas</button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="api-details">
-                      <h4>Request Payload:</h4>
-                      <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                      <h4>Response Payload:</h4>
-                      <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                      <h4>Formatted Result:</h4>
-                      <pre class="token">{result.formatted}</pre>
-                    </div>
-                  {/if}
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Estimates the gas required for a transaction. If no address is provided, the connected wallet address will be used as the destination.</p>
-                    <p>The data field can be used for contract interactions, and the value field specifies the amount of wei to send (in hex).</p>
-                  </div>
-                </div>
-              {:else if type === 'call'}
-                <div class="token-container">
-                  <h3>Contract Call</h3>
-                  <div class="storage-form">
-                    <div class="form-group">
-                      <label for="call-to">Contract Address:</label>
-                      <input
-                        type="text"
-                        id="call-to"
-                        bind:value={callParams.to}
-                        placeholder="0x..."
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="call-data">Call Data (hex):</label>
-                      <input
-                        type="text"
-                        id="call-data"
-                        bind:value={callParams.data}
-                        placeholder="0x..."
-                      />
-                      <small class="helper-text">Example: 0x70a08231000000000000000000000000... (balanceOf)</small>
-                    </div>
-                    <div class="form-group">
-                      <label for="call-value">Value (wei in hex):</label>
-                      <input
-                        type="text"
-                        id="call-value"
-                        bind:value={callParams.value}
-                        placeholder="0x0"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="call-block">Block Number:</label>
-                      <input
-                        type="text"
-                        id="call-block"
-                        bind:value={callParams.blockNumber}
-                        placeholder="latest"
-                      />
-                    </div>
-                    <div class="button-group">
-                      <button on:click={() => handleRpcCall('eth_call')}>Execute Call</button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="api-details">
-                      <h4>Request Payload:</h4>
-                      <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                      <h4>Response Payload:</h4>
-                      <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                      <h4>Formatted Result:</h4>
-                      <pre class="token">{result.formatted}</pre>
-                    </div>
-                  {/if}
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Executes a contract method call without creating a transaction. This is useful for reading data from smart contracts.</p>
-                    <p>The data field should contain the encoded function signature and parameters. For example, to call balanceOf(address), use the encoded data starting with 0x70a08231...</p>
-                  </div>
-                </div>
-              {:else if type === 'blockByHash'}
-                <div class="token-container">
-                  <h3>Get Block By Hash</h3>
-                  <div class="storage-form">
-                    <div class="form-group">
-                      <label for="block-hash">Block Hash:</label>
-                      <input
-                        type="text"
-                        id="block-hash"
-                        bind:value={blockByHashParams.blockHash}
-                        placeholder="0x..."
-                      />
-                      <small class="helper-text">Block hash must start with '0x'</small>
-                    </div>
-                    <div class="form-group">
-                      <label class="checkbox-label">
-                        <input
-                          type="checkbox"
-                          bind:checked={blockByHashParams.includeTransactions}
-                        />
-                        Include Full Transactions
-                      </label>
-                    </div>
-                    <div class="button-group">
-                      <button on:click={() => handleRpcCall('eth_getBlockByHash')}>
-                        {showBlockByHashForm && blockByHashParams.blockHash ? 'Get Block' : 'Search Block By Hash'}
-                      </button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="api-details">
-                      {#if result.error}
-                        <div class="error-message">
-                          <span class="error-icon">⚠️</span>
-                          {result.error}
-                        </div>
-                      {:else}
-                        <h4>Request Payload:</h4>
-                        <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                        <h4>Response Payload:</h4>
-                        <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                        <h4>Formatted Result:</h4>
-                        <pre class="token">{result.formatted}</pre>
-                      {/if}
-                    </div>
-                  {/if}
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Returns information about a block by its hash. The block hash must start with '0x'.</p>
-                    <p>When "Include Full Transactions" is checked, you'll see detailed transaction information including From, To, Value, and Gas.</p>
-                  </div>
-                </div>
-              {:else if type === 'transactionByHash'}
-                <div class="token-container">
-                  <h3>Get Transaction By Hash</h3>
-                  <div class="storage-form">
-                    <div class="form-group">
-                      <label for="transaction-hash">Transaction Hash:</label>
-                      <input
-                        type="text"
-                        id="transaction-hash"
-                        bind:value={transactionByHashParams.hash}
-                        placeholder="0x..."
-                      />
-                      <small class="helper-text">Transaction hash must start with '0x'</small>
-                    </div>
-                    <div class="button-group">
-                      <button on:click={() => handleRpcCall('eth_getTransactionByHash')}>
-                        {showTransactionByHashForm && transactionByHashParams.hash ? 'Get Transaction' : 'Search Transaction By Hash'}
-                      </button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="api-details">
-                      {#if result.error}
-                        <div class="error-message">
-                          <span class="error-icon">⚠️</span>
-                          {result.error}
-                        </div>
-                      {:else}
-                        <h4>Request Payload:</h4>
-                        <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                        <h4>Response Payload:</h4>
-                        <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                        <h4>Formatted Result:</h4>
-                        <pre class="token">{result.formatted}</pre>
-                      {/if}
-                    </div>
-                  {/if}
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Returns information about a transaction by its hash. The transaction hash must start with '0x'.</p>
-                    <p>All numeric values are automatically converted to human-readable format (IMX for value, Gwei for gas price).</p>
-                  </div>
-                </div>
-              {:else if type === 'transactionReceipt'}
-                <div class="token-container">
-                  <h3>Transaction Receipt</h3>
-                  <div class="storage-form">
-                    <div class="form-group">
-                      <label for="receipt-hash">Transaction Hash:</label>
-                      <input
-                        type="text"
-                        id="receipt-hash"
-                        bind:value={transactionState.hash}
-                        placeholder="0x..."
-                      />
-                      <small class="helper-text">Transaction hash must start with '0x'</small>
-                    </div>
-                    <div class="button-group">
-                      <button on:click={() => handleRpcCall('eth_getTransactionReceipt')}>
-                        Get Receipt
-                      </button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="api-details">
-                      {#if result.error}
-                        <div class="error-message">
-                          <span class="error-icon">⚠️</span>
-                          {result.error}
-                        </div>
-                      {:else}
-                        <h4>Request Payload:</h4>
-                        <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                        <h4>Response Payload:</h4>
-                        <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                        <h4>Formatted Result:</h4>
-                        <pre class="token">{result.formatted}</pre>
-                      {/if}
-                    </div>
-                  {/if}
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Returns the receipt of a transaction by transaction hash. Receipt includes transaction execution status, gas used, logs, and other details.</p>
-                  </div>
-                </div>
-              {:else if type === 'getCode'}
-                <div class="token-container">
-                  <h3>Get Contract Code</h3>
-                  <div class="storage-form">
-                    <div class="form-group">
-                      <label for="code-address">Contract Address:</label>
-                      <input
-                        type="text"
-                        id="code-address"
-                        bind:value={getCodeParams.address}
-                        placeholder="0x..."
-                      />
-                      <small class="helper-text">The address of the smart contract</small>
-                    </div>
-                    <div class="form-group">
-                      <label for="code-block">Block Number (optional):</label>
-                      <select
-                        id="code-block"
-                        bind:value={getCodeParams.blockNumber}
-                      >
-                        <option value="latest">latest - Most recent block</option>
-                        <option value="earliest">earliest - Genesis block</option>
-                        <option value="pending">pending - Pending block</option>
-                        <option value="safe">safe - Latest safe head block</option>
-                        <option value="finalized">finalized - Latest finalized block</option>
-                        <option value="number">Block number (hex or decimal)</option>
-                      </select>
-                      {#if getCodeParams.blockNumber === 'number'}
-                        <input
-                          type="text"
-                          placeholder="Enter block number (e.g. 1000 or 0x3e8)"
-                          bind:value={getCodeParams.customBlockNumber}
-                          class="mt-2"
-                        />
-                      {/if}
-                      <small class="helper-text">Select block tag or enter a specific block number</small>
-                    </div>
-                    <div class="button-group">
-                      <button on:click={() => handleRpcCall('eth_getCode')}>
-                        Get Contract Code
-                      </button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="api-details">
-                      {#if result.error}
-                        <div class="error-message">
-                          <span class="error-icon">⚠️</span>
-                          {result.error}
-                        </div>
-                      {:else}
-                        <h4>Request Payload:</h4>
-                        <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                        <h4>Response Payload:</h4>
-                        <pre class="token">{JSON.stringify(result.response, null, 2)}</pre>
-                        <h4>Formatted Result:</h4>
-                        <pre class="token">{result.formatted}</pre>
-                      {/if}
-                    </div>
-                  {/if}
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Returns the bytecode of a smart contract at a given address. If the address is not a contract, returns '0x'.</p>
-                    <p>The block number parameter is optional - if omitted, the latest block is used.</p>
-                  </div>
-                </div>
-              {:else if type === 'signTypedData'}
-                <div class="token-container">
-                  <h3>Sign Typed Data (EIP-712)</h3>
-                  <div class="storage-form">
-                    <div class="form-group">
-                      <label>From:</label>
-                      <input
-                        type="text"
-                        placeholder="Sender's name"
-                        bind:value={signTypedDataParams.typedData.message.from.name}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Sender's wallet address (0x...)"
-                        bind:value={signTypedDataParams.typedData.message.from.wallet}
-                        class="mt-2"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label>To:</label>
-                      <input
-                        type="text"
-                        placeholder="Recipient's name"
-                        bind:value={signTypedDataParams.typedData.message.to.name}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Recipient's wallet address (0x...)"
-                        bind:value={signTypedDataParams.typedData.message.to.wallet}
-                        class="mt-2"
-                        disabled
-                      />
-                      <small class="helper-text">Your connected wallet address will be used</small>
-                    </div>
-                    <div class="form-group">
-                      <label>Message:</label>
-                      <textarea
-                        placeholder="Enter your message"
-                        bind:value={signTypedDataParams.typedData.message.contents}
-                        rows="3"
-                      ></textarea>
-                    </div>
-                    <div class="button-group">
-                      <button on:click={() => handleRpcCall('eth_signTypedData_v4')}>
-                        {showSignTypedDataForm ? 'Sign Message' : 'Create Typed Message'}
-                      </button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="api-details">
-                      {#if result.error}
-                        <div class="error-message">
-                          <span class="error-icon">⚠️</span>
-                          {result.error}
-                        </div>
-                      {:else}
-                        <div class="signature-details">
-                          <h4>Formatted Result:</h4>
-                          <pre class="token">{result.formatted}</pre>
-                          
-                          <div class="collapsible">
-                            <h4>Request Payload:</h4>
-                            <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                          </div>
-                          
-                          <div class="collapsible">
-                            <h4>Raw Signature:</h4>
-                            <pre class="token break-all">{result.response}</pre>
-                          </div>
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Signs an EIP-712 structured message. This is a secure way to sign structured data that is human-readable.</p>
-                    <p>The signature can be verified on-chain using the EIP-712 standard.</p>
-                  </div>
-                </div>
-              {:else if type === 'personalSign'}
-                <div class="token-container">
-                  <h3>Personal Sign (ERC-191)</h3>
-                  <div class="storage-form">
-                    <div class="form-group">
-                      <label>Signer Address:</label>
-                      <input
-                        type="text"
-                        placeholder="Enter signer address (0x...)"
-                        bind:value={personalSignParams.fromAddress}
-                      />
-                      <small class="helper-text">The Ethereum address that will sign the message</small>
-                    </div>
-                    <div class="form-group">
-                      <label>Message:</label>
-                      <textarea
-                        placeholder="Enter your message"
-                        bind:value={personalSignParams.message}
-                        rows="3"
-                      ></textarea>
-                      <small class="helper-text">Enter a message to sign using ERC-191 personal_sign standard</small>
-                    </div>
-                    <div class="button-group">
-                      <button on:click={() => handleRpcCall('personal_sign')}>
-                        {showPersonalSignForm ? 'Sign Message' : 'Create Personal Message'}
-                      </button>
-                    </div>
-                  </div>
-                  {#if result}
-                    <div class="api-details">
-                      {#if result.error}
-                        <div class="error-message">
-                          <span class="error-icon">⚠️</span>
-                          {result.error}
-                        </div>
-                      {:else}
-                        <div class="signature-details">
-                          <h4>Formatted Result:</h4>
-                          <pre class="token">{result.formatted}</pre>
-                          
-                          <div class="collapsible">
-                            <h4>Request Payload:</h4>
-                            <pre class="token">{JSON.stringify(result.request, null, 2)}</pre>
-                          </div>
-                          
-                          <div class="collapsible">
-                            <h4>Raw Signature:</h4>
-                            <pre class="token break-all">{result.response}</pre>
-                          </div>
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                  <div class="note">
-                    <span class="note-icon">💡</span>
-                    <p>Signs a message using ERC-191 personal_sign standard. This is a simple way to sign arbitrary messages.</p>
-                    <p>The message will be automatically prefixed with "\x19Ethereum Signed Message:\n" and the message length.</p>
-                  </div>
-                </div>
-              {/if}
-            {/each}
+            <!-- Actions -->
+            <div class="space-y-2">
+              <h3 class="text-lg font-medium text-gray-900 mb-3">Actions</h3>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleGetIdToken()}
+              >
+                Get ID Token
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleGetAccessToken()}
+              >
+                Get Access Token
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleGetUserInfo()}
+              >
+                Get User Info
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleGetLinkedAddresses()}
+              >
+                Get Linked Addresses
+              </button>
+            </div>
+
+            <!-- RPC Methods -->
+            <div class="space-y-2">
+              <h3 class="text-lg font-medium text-gray-900 mb-3">RPC Methods</h3>
+              
+              <!-- Network Selection -->
+              <div class="flex gap-2 mb-2">
+                <button
+                  class="flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors
+                    {currentNetwork === 'testnet' ? 
+                      'bg-indigo-100 text-indigo-700' : 
+                      'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+                  on:click={() => switchNetwork('testnet')}
+                >
+                  Testnet
+                </button>
+                <button
+                  class="flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors
+                    {currentNetwork === 'mainnet' ? 
+                      'bg-indigo-100 text-indigo-700' : 
+                      'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+                  on:click={() => switchNetwork('mainnet')}
+                >
+                  Mainnet
+                </button>
+              </div>
+
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_requestAccounts')}
+              >
+                Request Accounts
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_sendTransaction')}
+              >
+                Send Transaction
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_accounts')}
+              >
+                Get Accounts
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_gasPrice')}
+              >
+                Get Gas Price
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_getBalance')}
+              >
+                Get Balance
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_getStorageAt')}
+              >
+                Get Storage
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_estimateGas')}
+              >
+                Estimate Gas
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_call')}
+              >
+                Call
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_getBlockByHash')}
+              >
+                Get Block By Hash
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_getBlockByNumber')}
+              >
+                Get Block By Number
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_getTransactionByHash')}
+              >
+                Get Transaction By Hash
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_getTransactionReceipt')}
+              >
+                Get Transaction Receipt
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_getTransactionCount')}
+              >
+                Get Transaction Count
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_getCode')}
+              >
+                Get Code
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_signTypedData_v4')}
+              >
+                Sign Typed Data v4
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('personal_sign')}
+              >
+                Personal Sign
+              </button>
+            </div>
           </div>
         </div>
-      {:else}
-        <button class="passport-button" on:click={handleLogin}>
-          <img src="/passport_btn_signin_light_small.svg" alt="Connect with Immutable Passport" />
-        </button>
-      {/if}
+      </aside>
+
+      <!-- Main Content -->
+      <main class="flex-1 space-y-6">
+        <div class="bg-white rounded-lg shadow-sm p-6">
+          <h2 class="text-2xl font-bold text-gray-900 mb-6">Passport Demo</h2>
+
+          <!-- Display Results -->
+          {#if displayOrder.length > 0}
+            <div class="mt-6 space-y-4">
+              {#each displayOrder as type}
+                <div class="bg-gray-50 rounded-md p-4">
+                  <!-- Method Title and Description -->
+                  <div class="border-b border-gray-200 pb-4 mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">eth_{type}</h3>
+                    {#if result?.description}
+                      <p class="mt-1 text-sm text-gray-600">{result.description}</p>
+                    {/if}
+                  </div>
+
+                  <!-- Form Content -->
+                  {#if type === 'estimateGas'}
+                    <div class="space-y-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-to">
+                          To Address <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="estimate-to"
+                          bind:value={estimateGasParams.to}
+                          placeholder={userAddress || '0x...'}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The destination address of the message. Defaults to connected address if empty.</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-data">
+                          Data
+                        </label>
+                        <input
+                          type="text"
+                          id="estimate-data"
+                          bind:value={estimateGasParams.data}
+                          placeholder="0x"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The byte string containing the associated data of the message, or contract initialization code (optional).</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-value">
+                          Value
+                        </label>
+                        <input
+                          type="text"
+                          id="estimate-value"
+                          bind:value={estimateGasParams.value}
+                          placeholder="0x0"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The value transferred for the transaction in wei, encoded as a hex string (optional).</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-block-param">
+                          Block Parameter
+                        </label>
+                        <select
+                          id="estimate-block-param"
+                          bind:value={estimateGasParams.blockParam}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                        >
+                          <option value="latest">latest</option>
+                          <option value="earliest">earliest</option>
+                          <option value="pending">pending</option>
+                          <option value="safe">safe</option>
+                          <option value="finalized">finalized</option>
+                          <option value="number">Block Number</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">The block number to get the gas estimate at. If omitted, the latest block is used.</p>
+                      </div>
+
+                      {#if estimateGasParams.blockParam === 'number'}
+                        <div>
+                          <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-block-number">
+                            Block Number
+                          </label>
+                          <input
+                            type="text"
+                            id="estimate-block-number"
+                            bind:value={estimateGasParams.customBlockNumber}
+                            placeholder="123 or 0x7b"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                          />
+                          <p class="mt-1 text-xs text-gray-500">Enter decimal number or hexadecimal with 0x prefix</p>
+                        </div>
+                      {/if}
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={() => handleRpcCall('eth_estimateGas')}
+                      >
+                        Estimate Gas
+                      </button>
+                    </div>
+                  {/if}
+
+                  <!-- Result or Error -->
+                  {#if result}
+                    <div class="mt-6 bg-gray-50 rounded-md p-4">
+                      {#if result.error}
+                        <h4 class="text-sm font-medium text-red-900 mb-2">Error:</h4>
+                        <p class="text-red-600 text-sm">{result.error}</p>
+                      {:else if result.request}
+                        <div>
+                          <h4 class="text-sm font-medium text-gray-900 mb-2">Request Payload:</h4>
+                          <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(result.request, null, 2)}</pre>
+                        </div>
+
+                        <div class="mt-4">
+                          <h4 class="text-sm font-medium text-gray-900 mb-2">Response Payload:</h4>
+                          <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(result.response, null, 2)}</pre>
+                        </div>
+
+                        <div class="mt-4">
+                          <h4 class="text-sm font-medium text-gray-900 mb-2">Formatted Result:</h4>
+                          <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{result.formatted}</pre>
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </main>
     </div>
   </div>
-</main>
+</div>
 
-<style>
-  .transaction-details {
-    font-family: monospace;
-    padding: 1rem;
-    background-color: #f5f5f5;
-    border-radius: 4px;
-  }
-  
-  .detail-row {
-    display: flex;
-    margin: 0.5rem 0;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid #eee;
-  }
-  
-  .detail-label {
-    flex: 0 0 200px;
-    color: #666;
-  }
-  
-  .detail-value {
-    flex: 1;
-    word-break: break-all;
-  }
-
-  .transaction-result {
-    margin-top: 2rem;
-    border-top: 1px solid #eee;
-    padding-top: 1rem;
-  }
-
-  .description {
-    color: #666;
-    margin-bottom: 1rem;
-    font-size: 0.9rem;
-  }
-
-  .accounts-list {
-    background-color: #f5f5f5;
-    padding: 1rem;
-    border-radius: 4px;
-  }
-
-  .account-item {
-    padding: 0.5rem 0;
-    border-bottom: 1px solid #eee;
-    font-family: monospace;
-  }
-
-  .account-item:last-child {
-    border-bottom: none;
-  }
-
-  .api-details {
-    margin: 1rem 0;
-  }
-
-  .api-details h4 {
-    color: #666;
-    margin: 1rem 0 0.5rem 0;
-    font-size: 0.9rem;
-  }
-
-  .api-details pre {
-    background-color: #f8f9fa;
-    padding: 0.75rem;
-    border-radius: 4px;
-    margin: 0.5rem 0;
-  }
-
-  .storage-form {
-    background-color: #fff;
-    padding: 1rem;
-    border-radius: 4px;
-    margin: 1rem 0;
-  }
-
-  .storage-form .form-group {
-    margin-bottom: 1rem;
-  }
-
-  .storage-form label {
-    display: block;
-    margin-bottom: 0.5rem;
-    color: #333;
-    font-size: 0.9rem;
-  }
-
-  .storage-form input {
-    width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-family: monospace;
-  }
-
-  .button-group {
-    margin-top: 1rem;
-  }
-
-  .button-group button {
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-    padding: 0.75rem 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    width: 100%;
-  }
-
-  .button-group button:hover {
-    background-color: #45a049;
-  }
-
-  .helper-text {
-    font-size: 0.8rem;
-    color: #666;
-    margin-top: 0.25rem;
-    font-style: italic;
-  }
-
-  .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
-  }
-
-  .checkbox-label input[type="checkbox"] {
-    width: auto;
-    margin: 0;
-  }
-
-  .action-buttons {
-    margin-top: 1rem;
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .action-buttons button {
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.9rem;
-  }
-
-  .action-buttons button:hover {
-    background-color: #45a049;
-  }
-
-  .error-message {
-    background-color: #ffebee;
-    color: #c62828;
-    padding: 1rem;
-    border-radius: 4px;
-    margin: 1rem 0;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .error-icon {
-    font-size: 1.2rem;
-  }
-
-  textarea {
-    width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-family: inherit;
-    resize: vertical;
-  }
-
-  .mt-2 {
-    margin-top: 0.5rem;
-  }
-
-  .network-selector {
-    margin-bottom: 2rem;
-    padding: 1rem;
-    background-color: #f5f5f5;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .network-label {
-    font-weight: bold;
-    color: #666;
-  }
-
-  .network-selector button {
-    padding: 0.5rem 1rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    background-color: white;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .network-selector button:hover {
-    background-color: #f0f0f0;
-  }
-
-  .network-selector button.active {
-    background-color: #4CAF50;
-    color: white;
-    border-color: #4CAF50;
-  }
-
-  .menu-section {
-    margin-bottom: 1.5rem;
-    padding: 1rem;
-    background: #f8f9fa;
-    border-radius: 8px;
-  }
-
-  .network-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-
-  .network-buttons button {
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    background-color: white;
-    cursor: pointer;
-    transition: all 0.2s;
-    width: 100%;
-    text-align: left;
-  }
-
-  .network-buttons button:hover {
-    background-color: #f0f0f0;
-  }
-
-  .network-buttons button.active {
-    background-color: #4CAF50;
-    color: white;
-    border-color: #4CAF50;
-  }
-
-  .menu-section h3 {
-    color: #333;
-    margin: 0 0 0.5rem 0;
-    font-size: 1rem;
-  }
-
-  .connection-status {
-    margin-bottom: 1rem;
-    padding: 1rem;
-    background: #f8f9fa;
-    border-radius: 8px;
-  }
-
-  .network-selector {
-    display: flex;
-    gap: 2px;
-    margin-bottom: 0.5rem;
-    background: #eee;
-    padding: 2px;
-    border-radius: 4px;
-    width: 100%;
-  }
-
-  .network-selector button {
-    flex: 1;
-    padding: 3px 8px;
-    font-size: 0.75rem;
-    border: none;
-    border-radius: 2px;
-    background-color: transparent;
-    cursor: pointer;
-    transition: all 0.2s;
-    color: #666;
-    text-align: center;
-  }
-
-  .network-selector button:hover {
-    background-color: rgba(255,255,255,0.5);
-  }
-
-  .network-selector button.active {
-    background-color: white;
-    color: #4CAF50;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-  }
-
-  .signature-details {
-    background: #f8f9fa;
-    padding: 1rem;
-    border-radius: 4px;
-    margin: 1rem 0;
-  }
-
-  .signature-details h4 {
-    color: #333;
-    margin: 1rem 0 0.5rem 0;
-  }
-
-  .signature-details pre {
-    background: white;
-    padding: 1rem;
-    border-radius: 4px;
-    overflow-x: auto;
-  }
-
-  .break-all {
-    word-break: break-all;
-    white-space: pre-wrap;
-  }
-
-  .collapsible {
-    margin: 1rem 0;
-  }
-
-  .collapsible h4 {
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .collapsible h4:hover {
-    color: #4CAF50;
-  }
+<style lang="postcss">
+  @reference "tailwindcss";
 </style>
