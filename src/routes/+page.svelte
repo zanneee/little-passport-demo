@@ -186,7 +186,7 @@
         },
         to: {
           name: 'Bob',
-          wallet: ''  // 현재 연결된 지갑 주소로 자동 설정됨
+          wallet: ''  // Automatically set to the currently connected wallet address
         },
         contents: 'Hello, Bob! Welcome to Immutable zkEVM.'
       },
@@ -213,7 +213,7 @@
 
   let personalSignParams = {
     message: 'Hello, Immutable zkEVM',
-    fromAddress: ''  // 서명자 주소 필드 추가
+    fromAddress: ''  // Add signer address field
   };
 
   let showPersonalSignForm = false;
@@ -239,18 +239,18 @@
     }
   }
 
-  // 네트워크 전환 함수
+  // Network switching function
   async function switchNetwork(network: 'testnet' | 'mainnet') {
     try {
       currentNetwork = network;
       updateChainId();
       
-      // 환경 변수 업데이트
+      // Update environment variables
       const environment = network === 'mainnet' ? 
         config.Environment.PRODUCTION : 
         config.Environment.SANDBOX;
 
-      // Passport 인스턴스 재초기화
+      // Reinitialize Passport instance
       passportInstance = new passport.Passport({
         baseConfig: {
           environment,
@@ -263,12 +263,12 @@
         scope: 'openid offline_access email transact',
       });
 
-      // 연결 재설정
+      // Reset connection
       if (isConnected) {
         await initializeProviders();
       }
 
-      // 결과 메시지 표시
+      // Display result message
       result = {
         message: `Switched to ${NETWORK_CONFIG[network].name}`,
         chainId: NETWORK_CONFIG[network].chainId
@@ -280,6 +280,26 @@
         error: error.message || 'Failed to switch network'
       };
     }
+  }
+
+  // Update environment variables
+  function updateEnvVars() {
+    // ... existing code ...
+  }
+
+  // Reinitialize Passport instance
+  async function reinitializePassport() {
+    // ... existing code ...
+  }
+
+  // Reset connection
+  async function resetConnection() {
+    // ... existing code ...
+  }
+
+  // Display result message
+  function showResult() {
+    // ... existing code ...
   }
 
   onMount(() => {
@@ -991,7 +1011,7 @@
         case 'personal_sign':
           if (!showPersonalSignForm) {
             showPersonalSignForm = true;
-            personalSignParams.fromAddress = userAddress || '';  // 현재 연결된 주소로 초기화
+            personalSignParams.fromAddress = userAddress || '';  // Initialize with current connected address
             result = null;
             addToDisplayOrder('personalSign');
             return;
@@ -1009,7 +1029,7 @@
             const messageToSign = personalSignParams.message;
             const signPayload = { 
               method: 'personal_sign',
-              params: [messageToSign, personalSignParams.fromAddress]  // 순서 변경: [message, address]
+              params: [messageToSign, personalSignParams.fromAddress]  // Update order: [message, address]
             };
 
             const signedMessage = await passportProvider.request(signPayload);
