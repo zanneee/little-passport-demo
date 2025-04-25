@@ -729,26 +729,51 @@
           break;
 
         case 'eth_call':
-          const callPayload = {
-            method: 'eth_call',
-            params: [
-              {
-                to: callParams.to || userAddress,
-                data: callParams.data,
-                value: callParams.value
-              },
-              callParams.blockNumber
-            ]
-          };
-          const callResult = await passportProvider.request(callPayload);
-          result = {
-            method: 'eth_call',
-            description: "Executes a new message call immediately without creating a transaction on the blockchain.",
-            request: callPayload,
-            response: callResult,
-            formatted: `Return Value: ${callResult}`
-          };
-          addToDisplayOrder('call');
+          if (!displayOrder.includes('call')) {
+            addToDisplayOrder('call');
+            result = {
+              method: 'eth_call',
+              description: "Executes a new message call immediately without creating a transaction on the blockchain."
+            };
+            return;
+          }
+
+          try {
+            // 주소가 비어있으면 현재 로그인된 주소 사용
+            if (!callParams.to && userAddress) {
+              callParams.to = userAddress;
+            }
+
+            if (!callParams.to) {
+              throw new Error('Destination address (to) is required');
+            }
+
+            const callPayload = {
+              method: 'eth_call',
+              params: [
+                {
+                  to: callParams.to,
+                  data: callParams.data || '0x',
+                  value: callParams.value || '0x0'
+                },
+                callParams.blockNumber
+              ]
+            };
+            const callResult = await passportProvider.request(callPayload);
+            result = {
+              method: 'eth_call',
+              description: "Executes a new message call immediately without creating a transaction on the blockchain.",
+              request: callPayload,
+              response: callResult,
+              formatted: `Return Value: ${callResult}`
+            };
+          } catch (error: any) {
+            result = {
+              method: 'eth_call',
+              description: "Executes a new message call immediately without creating a transaction on the blockchain.",
+              error: error.message || 'Failed to execute call'
+            };
+          }
           break;
 
         case 'eth_getBlockByHash':
@@ -1667,6 +1692,77 @@
                         on:click={() => handleRpcCall('eth_estimateGas')}
                       >
                         Estimate Gas
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'call'}
+                    <div class="space-y-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-to">
+                          To Address <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="call-to"
+                          bind:value={callParams.to}
+                          placeholder={userAddress || '0x...'}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The address to execute the call on. Defaults to connected address if empty.</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-data">
+                          Data
+                        </label>
+                        <input
+                          type="text"
+                          id="call-data"
+                          bind:value={callParams.data}
+                          placeholder="0x"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The data to be executed in the call (e.g. encoded function call).</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-value">
+                          Value
+                        </label>
+                        <input
+                          type="text"
+                          id="call-value"
+                          bind:value={callParams.value}
+                          placeholder="0x0"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The value to be sent with the call in wei, encoded as a hex string (optional).</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-block-number">
+                          Block Number
+                        </label>
+                        <select
+                          id="call-block-number"
+                          bind:value={callParams.blockNumber}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                        >
+                          <option value="latest">latest</option>
+                          <option value="earliest">earliest</option>
+                          <option value="pending">pending</option>
+                          <option value="safe">safe</option>
+                          <option value="finalized">finalized</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">The block number to execute the call at. If omitted, the latest block is used.</p>
+                      </div>
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={() => handleRpcCall('eth_call')}
+                      >
+                        Execute Call
                       </button>
                     </div>
                   {/if}
