@@ -395,21 +395,16 @@
 
   function addToDisplayOrder(type: string) {
     // Reset form visibility flags except for the current form
-    if (type !== 'sendTransaction') showTransactionForm = false;
-    if (type !== 'blockByHash') showBlockByHashForm = false;
-    if (type !== 'transactionByHash') showTransactionByHashForm = false;
-    if (type !== 'signTypedData') showSignTypedDataForm = false;
-    if (type !== 'personalSign') showPersonalSignForm = false;
-
-    // Show form for specific types
-    if (type === 'sendTransaction') showTransactionForm = true;
-    if (type === 'blockByHash') showBlockByHashForm = true;
-    if (type === 'transactionByHash') showTransactionByHashForm = true;
-    if (type === 'signTypedData') showSignTypedDataForm = true;
-    if (type === 'personalSign') showPersonalSignForm = true;
+    showTransactionForm = type === 'sendTransaction';
+    showBlockByHashForm = type === 'blockByHash';
+    showTransactionByHashForm = type === 'transactionByHash';
+    showSignTypedDataForm = type === 'signTypedData';
+    showPersonalSignForm = type === 'personalSign';
     
-    // Set current type
-    displayOrder = [type];
+    // Add new type to displayOrder if it doesn't exist
+    if (!displayOrder.includes(type)) {
+      displayOrder = [...displayOrder, type];
+    }
   }
 
   async function handleGetIdToken() {
@@ -511,6 +506,10 @@
 
   async function handleRpcCall(method: string) {
     try {
+      // 새로운 메서드 호출 시 이전 결과들 초기화
+      displayOrder = [];
+      result = null;
+
       switch (method) {
         case 'eth_requestAccounts':
           const requestAccountsPayload = { method: 'eth_requestAccounts' };
@@ -522,7 +521,7 @@
             response: accounts,
             formatted: JSON.stringify(accounts, null, 2)
           };
-          addToDisplayOrder('requestAccounts');
+          addToDisplayOrder('eth_requestAccounts');
           break;
 
         case 'eth_accounts':
@@ -535,7 +534,7 @@
             response: accountsList,
             formatted: JSON.stringify(accountsList, null, 2)
           };
-          addToDisplayOrder('accounts');
+          addToDisplayOrder('eth_accounts');
           break;
 
         case 'eth_chainId':
@@ -548,7 +547,7 @@
             response: chainId,
             formatted: `Chain ID: ${chainId} (Decimal: ${parseInt(chainId, 16)}) - Immutable zkEVM ${currentNetwork === 'testnet' ? 'Testnet' : 'Mainnet'}`
           };
-          addToDisplayOrder('chainId');
+          addToDisplayOrder('eth_chainId');
           break;
 
         case 'eth_blockNumber':
@@ -561,7 +560,7 @@
             response: blockNumber,
             formatted: blockNumber
           };
-          addToDisplayOrder('blockNumber');
+          addToDisplayOrder('eth_blockNumber');
           break;
 
         case 'eth_gasPrice':
@@ -574,7 +573,7 @@
             response: gasPrice,
             formatted: `${(Number(gasPrice) / 1_000_000_000).toFixed(9)} Gwei`
           };
-          addToDisplayOrder('gasPrice');
+          addToDisplayOrder('eth_gasPrice');
           break;
 
         case 'eth_getBalance':
@@ -604,11 +603,11 @@
             response: balance,
             formatted: `${balanceInEther} tIMX (${balance} Wei)`
           };
-          addToDisplayOrder('balance');
+          addToDisplayOrder('eth_getBalance');
           break;
 
         case 'eth_getTransactionCount':
-          addToDisplayOrder('transactionCount');
+          addToDisplayOrder('eth_getTransactionCount');
           
           try {
             const address = transactionCountParams.address || userAddress;
@@ -679,13 +678,19 @@
             response: storageValue,
             formatted: `Storage Value: ${storageValue}`
           };
-          addToDisplayOrder('storage');
+          addToDisplayOrder('eth_getStorageAt');
           break;
 
         case 'eth_estimateGas':
-          if (!displayOrder.includes('estimateGas')) {
-            addToDisplayOrder('estimateGas');
-            result = null;  // Clear previous result
+          if (!displayOrder.includes('eth_estimateGas')) {
+            addToDisplayOrder('eth_estimateGas');
+            result = {
+              method: 'eth_estimateGas',
+              description: "Returns an estimate of the gas that would be used in a transaction with the given parameters.",
+              request: null,
+              response: null,
+              formatted: null
+            };
             return;
           }
           
@@ -729,11 +734,14 @@
           break;
 
         case 'eth_call':
-          if (!displayOrder.includes('call')) {
-            addToDisplayOrder('call');
+          if (!displayOrder.includes('eth_call')) {
+            addToDisplayOrder('eth_call');
             result = {
               method: 'eth_call',
-              description: "Executes a new message call immediately without creating a transaction on the blockchain."
+              description: "Executes a new message call immediately without creating a transaction on the blockchain.",
+              request: null,
+              response: null,
+              formatted: null
             };
             return;
           }
@@ -786,7 +794,7 @@
               response: null,
               formatted: null
             };
-            addToDisplayOrder('blockByHash');
+            addToDisplayOrder('eth_getBlockByHash');
             return;
           }
 
@@ -845,7 +853,7 @@
               error: error.message || 'Failed to get block'
             };
           }
-          addToDisplayOrder('blockByHash');
+          addToDisplayOrder('eth_getBlockByHash');
           break;
 
         case 'eth_getBlockByNumber':
@@ -906,7 +914,7 @@
               error: error.message || 'Failed to get block'
             };
           }
-          addToDisplayOrder('blockByNumber');
+          addToDisplayOrder('eth_getBlockByNumber');
           break;
 
         case 'eth_getTransactionByHash':
@@ -919,7 +927,7 @@
               response: null,
               formatted: null
             };
-            addToDisplayOrder('transactionByHash');
+            addToDisplayOrder('eth_getTransactionByHash');
             return;
           }
 
@@ -983,12 +991,12 @@
               error: error.message || 'Failed to get transaction'
             };
           }
-          addToDisplayOrder('transactionByHash');
+          addToDisplayOrder('eth_getTransactionByHash');
           break;
 
         case 'eth_getTransactionReceipt':
           // 먼저 UI를 표시하기 위해 displayOrder 업데이트
-          addToDisplayOrder('transactionReceipt');
+          addToDisplayOrder('eth_getTransactionReceipt');
           
           // 해시가 없으면 API 호출하지 않고 리턴
           if (!transactionState.hash) {
@@ -1035,7 +1043,7 @@
           break;
 
         case 'eth_getCode':
-          addToDisplayOrder('getCode');
+          addToDisplayOrder('eth_getCode');
           
           if (!getCodeParams.address) {
             result = null;
@@ -1107,7 +1115,7 @@
               response: null,
               formatted: null
             };
-            addToDisplayOrder('signTypedData');
+            addToDisplayOrder('eth_signTypedData_v4');
             return;
           }
 
@@ -1184,7 +1192,7 @@
               response: null,
               formatted: null
             };
-            addToDisplayOrder('personalSign');
+            addToDisplayOrder('personal_sign');
             return;
           }
 
@@ -1240,6 +1248,9 @@
           break;
 
         case 'eth_sendTransaction':
+          if (!isConnected) {
+            await handleLogin();
+          }
           showTransactionForm = true;
           result = {
             method: 'eth_sendTransaction',
@@ -1256,7 +1267,7 @@
             maxFeePerGas: '',
             maxPriorityFeePerGas: ''
           };
-          addToDisplayOrder('sendTransaction');
+          addToDisplayOrder('eth_sendTransaction');
           return;
       }
     } catch (error: any) {
@@ -1601,7 +1612,7 @@
                 <div class="bg-gray-50 rounded-md p-4">
                   <!-- Method Title and Description -->
                   <div class="border-b border-gray-200 pb-4 mb-4">
-                    <h3 class="text-lg font-medium text-gray-900">eth_{type}</h3>
+                    <h3 class="text-lg font-medium text-gray-900">{type}</h3>
                     {#if result?.description}
                       <p class="mt-1 text-sm text-gray-600">{result.description}</p>
                     {/if}
@@ -1763,6 +1774,63 @@
                         on:click={() => handleRpcCall('eth_call')}
                       >
                         Execute Call
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'getBalance'}
+                    <div class="space-y-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="balance-address">
+                          Address
+                        </label>
+                        <input
+                          type="text"
+                          id="balance-address"
+                          bind:value={balanceParams.address}
+                          placeholder={userAddress || '0x...'}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="balance-block">
+                          Block Parameter
+                        </label>
+                        <select
+                          id="balance-block"
+                          bind:value={balanceParams.blockParam}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                        >
+                          <option value="latest">latest</option>
+                          <option value="earliest">earliest</option>
+                          <option value="pending">pending</option>
+                          <option value="safe">safe</option>
+                          <option value="finalized">finalized</option>
+                          <option value="number">Block Number</option>
+                        </select>
+                      </div>
+
+                      {#if balanceParams.blockParam === 'number'}
+                        <div>
+                          <label class="block text-sm font-medium text-gray-700 mb-1" for="balance-block-number">
+                            Block Number
+                          </label>
+                          <input
+                            type="text"
+                            id="balance-block-number"
+                            bind:value={balanceParams.customBlockNumber}
+                            placeholder="123 or 0x7b"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                          />
+                        </div>
+                      {/if}
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={() => handleRpcCall('eth_getBalance')}
+                      >
+                        Get Balance
                       </button>
                     </div>
                   {/if}
