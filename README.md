@@ -47,7 +47,7 @@ yarn install
 yarn dev
 ```
 
-Visit `https://little-passport-demo.vercel.app/ to see the application running.
+Visit https://little-passport-demo.vercel.app/ to see the application running.
 
 ## Development
 
