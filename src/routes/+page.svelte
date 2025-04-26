@@ -415,40 +415,56 @@
 
   async function handleGetIdToken() {
     try {
+      // 다른 토큰 상태 초기화
+      tokenState.accessToken = null;
+      tokenState.decodedAccessToken = null;
+      displayOrder = [];
+
       const token = await passportInstance.getIdToken();
       if (token) {
         tokenState.idToken = token;
         tokenState.decodedIdToken = jwtDecode(token);
-        addToDisplayOrder('idToken');
+        displayOrder = ['idToken'];
       }
     } catch (error: unknown) {
       console.error('Failed to get ID token:', error);
       tokenState.idToken = null;
       tokenState.decodedIdToken = null;
+      displayOrder = [];
     }
   }
 
   async function handleGetAccessToken() {
     try {
+      // 다른 토큰 상태 초기화
+      tokenState.idToken = null;
+      tokenState.decodedIdToken = null;
+      displayOrder = [];
+
       const token = await passportInstance.getAccessToken();
       if (token) {
         tokenState.accessToken = token;
         tokenState.decodedAccessToken = jwtDecode(token);
-        addToDisplayOrder('accessToken');
+        displayOrder = ['accessToken'];
       }
     } catch (error: unknown) {
       console.error('Failed to get access token:', error);
       tokenState.accessToken = null;
       tokenState.decodedAccessToken = null;
+      displayOrder = [];
     }
   }
 
   async function handleGetUserInfo() {
     try {
+      // 이전 결과 초기화
+      linkedAddresses = null;
+      displayOrder = [];
+
       const info = await passportInstance.getUserInfo();
       if (info) {
         userInfo = info;
-        addToDisplayOrder('userInfo');
+        displayOrder = ['userInfo'];
       }
     } catch (error: unknown) {
       console.error('Failed to get user info:', error);
@@ -456,20 +472,26 @@
         console.error('User must be logged in to get user info');
       }
       userInfo = null;
+      displayOrder = [];
     }
   }
 
   async function handleGetLinkedAddresses() {
     try {
+      // 이전 결과 초기화
+      userInfo = null;
+      displayOrder = [];
+
       const addresses = await passportInstance.getLinkedAddresses();
       linkedAddresses = addresses;
-      addToDisplayOrder('linkedAddresses');
+      displayOrder = ['linkedAddresses'];
     } catch (error: unknown) {
       console.error('Failed to get linked addresses:', error);
       if ((error as Error).message === 'NOT_LOGGED_IN_ERROR') {
         console.error('User must be logged in to get linked addresses');
       }
       linkedAddresses = null;
+      displayOrder = [];
     }
   }
 
@@ -2596,6 +2618,78 @@ Message:
                     </div>
                   {/if}
 
+                  {#if type === 'idToken' && tokenState.idToken}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <h4 class="text-sm font-medium text-gray-900 mb-2">ID Token</h4>
+                        <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{tokenState.idToken}</pre>
+                      </div>
+                      {#if tokenState.decodedIdToken}
+                        <div>
+                          <h4 class="text-sm font-medium text-gray-900 mb-2">Decoded ID Token</h4>
+                          <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(tokenState.decodedIdToken, null, 2)}</pre>
+                        </div>
+                      {/if}
+                      <p class="text-sm text-gray-500 mt-4 p-4 bg-blue-50 rounded-md">
+                        Note: The <code class="text-blue-600">sub</code> attribute will uniquely identify the Passport user. If your decoded token does not look like the above, double check that you have decoded the ID token and not the Access token.
+                      </p>
+                    </div>
+                  {/if}
+
+                  {#if type === 'accessToken' && tokenState.accessToken}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <h4 class="text-sm font-medium text-gray-900 mb-2">Access Token</h4>
+                        <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{tokenState.accessToken}</pre>
+                      </div>
+                      {#if tokenState.decodedAccessToken}
+                        <div>
+                          <h4 class="text-sm font-medium text-gray-900 mb-2">Decoded Access Token</h4>
+                          <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(tokenState.decodedAccessToken, null, 2)}</pre>
+                        </div>
+                      {/if}
+                      <p class="text-sm text-gray-500 mt-4 p-4 bg-blue-50 rounded-md">
+                        Note: The <code class="text-blue-600">sub</code> attribute will uniquely identify the Passport user. If your decoded token does not look like the above, double check that you have decoded the ID token and not the Access token.
+                      </p>
+                    </div>
+                  {/if}
+
+                  {#if type === 'userInfo' && userInfo}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <h4 class="text-sm font-medium text-gray-900 mb-2">User Info</h4>
+                        <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(userInfo, null, 2)}</pre>
+                      </div>
+                      <p class="text-sm text-gray-500 mt-4 p-4 bg-yellow-50 rounded-md">
+                        <span class="font-medium text-yellow-800">Apple Social Login Email Masking:</span> If a user logs in through Apple and chooses to mask their email address, the email will appear as xyz@privaterelay.appleid.com. This masked email prevents direct communication with users. Please consider this limitation when implementing Apple Social Login.
+                      </p>
+                    </div>
+                  {/if}
+
+                  {#if type === 'linkedAddresses' && linkedAddresses}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <h4 class="text-sm font-medium text-gray-900 mb-2">Linked Addresses</h4>
+                        <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(linkedAddresses, null, 2)}</pre>
+                        {#if linkedAddresses.length > 0}
+                          <div class="mt-4 space-y-2">
+                            <h5 class="text-sm font-medium text-gray-700">Explorer Links:</h5>
+                            {#each linkedAddresses as address}
+                              <a 
+                                href={`https://explorer.${currentNetwork}.immutable.com/address/${address}?tab=tokens`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="block text-sm text-indigo-600 hover:text-indigo-800 break-all"
+                              >
+                                {address} ↗
+                              </a>
+                            {/each}
+                          </div>
+                        {/if}
+                      </div>
+                    </div>
+                  {/if}
+
                   <!-- Result or Error -->
                   {#if result}
                     <div class="mt-6 bg-gray-50 rounded-md p-4">
@@ -2614,13 +2708,6 @@ Message:
                           <div class="mt-4">
                             <h4 class="text-sm font-medium text-gray-900 mb-2">Response Payload:</h4>
                             <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(result.response, null, 2)}</pre>
-                          </div>
-                        {/if}
-
-                        {#if result.decoded}
-                          <div class="mt-4">
-                            <h4 class="text-sm font-medium text-gray-900 mb-2">Decoded Result:</h4>
-                            <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{result.decoded}</pre>
                           </div>
                         {/if}
                       {/if}
