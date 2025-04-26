@@ -62,7 +62,7 @@
 
   // Constants
   const DEFAULT_TRANSACTION = {
-    to: '0xbbb4e3fa3e7efed0834e4eaeb6beeda635d67da2',
+    to: '0xacbe301e5b46f4dd532b74e209adac0c06d42f8c',
     value: '1000000000000000'
   };
 
@@ -148,7 +148,8 @@
 
   let blockByNumberParams = {
     blockNumber: 'latest',
-    includeTransactions: false
+    includeTransactions: false,
+    customBlockNumber: ''
   };
 
   let transactionByHashParams = {
@@ -157,7 +158,8 @@
 
   let transactionCountParams = {
     address: '',
-    blockNumber: 'latest'
+    blockNumber: 'latest',
+    customBlockNumber: ''
   };
 
   let getCodeParams = {
@@ -169,21 +171,21 @@
   let signTypedDataParams = {
     typedData: {
       domain: {
-        name: 'Immutable Passport Demo',
+        name: 'Ether Mail',
         version: '1',
-        chainId: 13473,  // Immutable zkEVM testnet chainId (0x5af)
-        verifyingContract: '0x0000000000000000000000000000000000000000'
+        chainId: 13473,  // Immutable zkEVM testnet chainId
+        verifyingContract: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826'
       },
       message: {
         from: {
-          name: 'Alice',
+          name: 'Cow',
           wallet: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826'
         },
         to: {
           name: 'Bob',
-          wallet: ''  // Automatically set to the currently connected wallet address
+          wallet: '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB'
         },
-        contents: 'Hello, Bob! Welcome to Immutable zkEVM.'
+        contents: 'Hello, Bob!'
       },
       primaryType: 'Mail',
       types: {
@@ -215,6 +217,10 @@
     address: '',
     blockParam: 'latest',
     customBlockNumber: ''
+  };
+
+  let transactionReceiptParams = {
+    hash: ''
   };
 
   // 네트워크 설정
@@ -470,19 +476,37 @@
   async function handleLogout() {
     try {
       await passportInstance.logout();
+      
+      // Reset all states
       isConnected = false;
       userAddress = null;
-      tokenState.idToken = null;
-      tokenState.accessToken = null;
-      tokenState.decodedIdToken = null;
-      tokenState.decodedAccessToken = null;
+      balance = null;
+      signer = null;
+      browserProvider = null;
+      
+      // Reset token states
+      tokenState = {
+        idToken: null,
+        accessToken: null,
+        decodedIdToken: null,
+        decodedAccessToken: null
+      };
+      
+      // Reset user info
       userInfo = null;
       linkedAddresses = null;
+      
+      // Clear display
       displayOrder = [];
-      signer = null;
-      balance = null;
+      result = null;
+
+      // Reinitialize providers
+      await initializeProviders();
     } catch (error: unknown) {
       console.error('Logout failed:', error);
+      result = {
+        error: `Logout failed: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+      };
     }
   }
 
@@ -504,11 +528,391 @@
     return blockParameter;
   }
 
+  async function executeStorageCall() {
+    console.log('Executing storage lookup');
+    console.log('Storage params:', storageParams);
+
+    try {
+      if (!storageParams.address) {
+        throw new Error('Address is required');
+      }
+
+      if (!storageParams.slot) {
+        throw new Error('Storage slot is required');
+      }
+
+      if (!passportProvider) {
+        throw new Error('Provider not initialized');
+      }
+
+      const blockParam = getBlockParameter(storageParams.blockParam, storageParams.customBlockNumber);
+      const requestPayload = {
+        method: 'eth_getStorageAt',
+        params: [
+          storageParams.address,
+          storageParams.slot,
+          blockParam
+        ]
+      };
+
+      console.log('Getting storage with payload:', requestPayload);
+      const storageValue = await passportProvider.request(requestPayload);
+      console.log('Storage response:', storageValue);
+
+      result = {
+        method: 'eth_getStorageAt',
+        description: "Returns the value from a storage position at a given address.",
+        request: requestPayload,
+        response: storageValue,
+        formatted: `Storage Value at slot ${storageParams.slot}: ${storageValue}`
+      };
+      displayOrder = ['eth_getStorageAt'];
+    } catch (error: any) {
+      console.error('Error getting storage:', error);
+      result = {
+        method: 'eth_getStorageAt',
+        description: "Returns the value from a storage position at a given address.",
+        error: error.message || 'Failed to get storage'
+      };
+      displayOrder = ['eth_getStorageAt'];
+    }
+  }
+
+  async function executeEstimateGas() {
+    console.log('Executing gas estimation');
+    console.log('Estimate gas params:', estimateGasParams);
+
+    try {
+      if (!estimateGasParams.to) {
+        throw new Error('To address is required');
+      }
+
+      if (!passportProvider) {
+        throw new Error('Provider not initialized');
+      }
+
+      const blockParam = getBlockParameter(estimateGasParams.blockParam, estimateGasParams.customBlockNumber);
+      const requestPayload = {
+        method: 'eth_estimateGas',
+        params: [{
+          to: estimateGasParams.to,
+          from: userAddress || undefined,
+          value: estimateGasParams.value || '0x0',
+          data: estimateGasParams.data || '0x'
+        }, blockParam]
+      };
+
+      console.log('Estimating gas with payload:', requestPayload);
+      const gasEstimate = await passportProvider.request(requestPayload);
+      console.log('Gas estimate response:', gasEstimate);
+
+      result = {
+        method: 'eth_estimateGas',
+        description: "Generates and returns an estimate of how much gas is necessary to allow the transaction to complete.",
+        request: requestPayload,
+        response: gasEstimate,
+        formatted: `Estimated Gas: ${parseInt(gasEstimate, 16).toLocaleString()} units`
+      };
+      displayOrder = ['eth_estimateGas'];
+    } catch (error: any) {
+      console.error('Error estimating gas:', error);
+      result = {
+        method: 'eth_estimateGas',
+        description: "Generates and returns an estimate of how much gas is necessary to allow the transaction to complete.",
+        error: error.message || 'Failed to estimate gas'
+      };
+      displayOrder = ['eth_estimateGas'];
+    }
+  }
+
+  async function executeGetBalance() {
+    console.log('Executing balance check');
+    console.log('Balance params:', balanceParams);
+
+    try {
+      if (!balanceParams.address) {
+        throw new Error('Address is required');
+      }
+
+      if (!passportProvider) {
+        throw new Error('Provider not initialized');
+      }
+
+      const balanceBlockParam = getBlockParameter(balanceParams.blockParam, balanceParams.customBlockNumber);
+      const requestPayload = { 
+        method: 'eth_getBalance',
+        params: [
+          balanceParams.address,
+          balanceBlockParam
+        ]
+      };
+      
+      console.log('Requesting balance with payload:', requestPayload);
+      const balance = await passportProvider.request(requestPayload);
+      console.log('Balance response:', balance);
+      
+      const balanceInEther = ethers.formatEther(balance);
+      result = {
+        method: 'eth_getBalance',
+        description: "Returns the balance of the account of given address in wei.",
+        request: requestPayload,
+        response: balance,
+        formatted: `${balanceInEther} tIMX (${balance} Wei)`
+      };
+      displayOrder = ['eth_getBalance'];
+    } catch (error: any) {
+      console.error('Error getting balance:', error);
+      result = {
+        method: 'eth_getBalance',
+        description: "Returns the balance of the account of given address in wei.",
+        error: error.message || 'Failed to get balance'
+      };
+      displayOrder = ['eth_getBalance'];
+    }
+  }
+
+  async function executeCall() {
+    console.log('Executing contract call');
+    console.log('Call params:', callParams);
+
+    try {
+      if (!callParams.to) {
+        throw new Error('To address is required');
+      }
+
+      if (!passportProvider) {
+        throw new Error('Provider not initialized');
+      }
+
+      // 트랜잭션 객체 구성
+      const transaction: any = {
+        to: callParams.to
+      };
+
+      // 선택적 필드들은 값이 있을 때만 추가
+      if (callParams.data && callParams.data.trim() !== '') {
+        transaction.data = callParams.data;
+      }
+
+      if (callParams.value && callParams.value.trim() !== '') {
+        transaction.value = callParams.value;
+      }
+
+      const requestPayload = {
+        method: 'eth_call',
+        params: [
+          transaction,
+          callParams.blockNumber
+        ]
+      };
+
+      console.log('Making contract call with payload:', requestPayload);
+      const response = await passportProvider.request(requestPayload);
+      console.log('Call response:', response);
+
+      result = {
+        method: 'eth_call',
+        description: "Executes a new message call immediately without creating a transaction on the blockchain.",
+        request: requestPayload,
+        response: response
+      };
+      displayOrder = ['eth_call'];
+    } catch (error: any) {
+      console.error('Error making contract call:', error);
+      result = {
+        method: 'eth_call',
+        description: "Executes a new message call immediately without creating a transaction on the blockchain.",
+        error: error.message || 'Failed to make contract call'
+      };
+      displayOrder = ['eth_call'];
+    }
+  }
+
+  async function executeGetBlockByHash() {
+    console.log('Executing get block by hash');
+    console.log('Block by hash params:', blockByHashParams);
+
+    try {
+      if (!blockByHashParams.blockHash) {
+        throw new Error('Block hash is required');
+      }
+
+      if (!passportProvider) {
+        throw new Error('Provider not initialized');
+      }
+
+      const requestPayload = {
+        method: 'eth_getBlockByHash',
+        params: [
+          blockByHashParams.blockHash,
+          blockByHashParams.includeTransactions
+        ]
+      };
+
+      console.log('Getting block with payload:', requestPayload);
+      const response = await passportProvider.request(requestPayload);
+      console.log('Block response:', response);
+
+      result = {
+        method: 'eth_getBlockByHash',
+        description: "Returns information about a block by hash.",
+        request: requestPayload,
+        response: response
+      };
+      displayOrder = ['eth_getBlockByHash'];
+    } catch (error: any) {
+      console.error('Error getting block:', error);
+      result = {
+        method: 'eth_getBlockByHash',
+        description: "Returns information about a block by hash.",
+        error: error.message || 'Failed to get block'
+      };
+      displayOrder = ['eth_getBlockByHash'];
+    }
+  }
+
+  async function executeGetBlockByNumber() {
+    console.log('Executing get block by number');
+    console.log('Block by number params:', blockByNumberParams);
+
+    try {
+      if (!passportProvider) {
+        throw new Error('Provider not initialized');
+      }
+
+      let blockParameter = blockByNumberParams.blockNumber;
+      if (blockParameter === 'number') {
+        if (!blockByNumberParams.customBlockNumber) {
+          throw new Error('Block number is required when "Block number" is selected');
+        }
+        // Handle both hex and decimal input
+        if (blockByNumberParams.customBlockNumber.startsWith('0x')) {
+          blockParameter = blockByNumberParams.customBlockNumber;
+        } else if (/^\d+$/.test(blockByNumberParams.customBlockNumber)) {
+          blockParameter = '0x' + Number(blockByNumberParams.customBlockNumber).toString(16);
+        } else {
+          throw new Error('Invalid block number format. Use decimal or hex (0x) format');
+        }
+      }
+
+      const requestPayload = {
+        method: 'eth_getBlockByNumber',
+        params: [
+          blockParameter,
+          blockByNumberParams.includeTransactions
+        ]
+      };
+
+      console.log('Getting block with payload:', requestPayload);
+      const response = await passportProvider.request(requestPayload);
+      console.log('Block response:', response);
+
+      result = {
+        method: 'eth_getBlockByNumber',
+        description: "Returns information about a block by block number.",
+        request: requestPayload,
+        response: response,
+        formatted: response ? `
+Block Number: ${parseInt(response.number, 16).toLocaleString()}
+Hash: ${response.hash}
+Parent Hash: ${response.parentHash}
+Timestamp: ${new Date(parseInt(response.timestamp, 16) * 1000).toLocaleString()}
+Gas Used: ${parseInt(response.gasUsed, 16).toLocaleString()}
+Gas Limit: ${parseInt(response.gasLimit, 16).toLocaleString()}
+Transactions: ${formatTransactions(response.transactions)}` : 'Block not found'
+      };
+      displayOrder = ['eth_getBlockByNumber'];
+    } catch (error: any) {
+      console.error('Error getting block:', error);
+      result = {
+        method: 'eth_getBlockByNumber',
+        description: "Returns information about a block by block number.",
+        error: error.message || 'Failed to get block'
+      };
+      displayOrder = ['eth_getBlockByNumber'];
+    }
+  }
+
+  async function executeGetTransactionByHash() {
+    console.log('Executing get transaction by hash');
+    console.log('Transaction by hash params:', transactionByHashParams);
+
+    try {
+      if (!transactionByHashParams.hash) {
+        throw new Error('Transaction hash is required');
+      }
+
+      if (!transactionByHashParams.hash.startsWith('0x')) {
+        throw new Error('Transaction hash must start with 0x');
+      }
+
+      if (!passportProvider) {
+        throw new Error('Provider not initialized');
+      }
+
+      const requestPayload = {
+        method: 'eth_getTransactionByHash',
+        params: [transactionByHashParams.hash]
+      };
+
+      console.log('Getting transaction with payload:', requestPayload);
+      const response = await passportProvider.request(requestPayload);
+      console.log('Transaction response:', response);
+
+      if (!response) {
+        result = {
+          method: 'eth_getTransactionByHash',
+          description: "Returns the information about a transaction requested by transaction hash.",
+          request: requestPayload,
+          response: null,
+          formatted: 'Transaction not found'
+        };
+      } else {
+        const valueInIMX = response.value ? (BigInt(response.value) / BigInt(1e18)).toString() : '0';
+        const gasPrice = response.gasPrice ? (BigInt(response.gasPrice) / BigInt(1e9)).toString() : '0';
+        
+        result = {
+          method: 'eth_getTransactionByHash',
+          description: "Returns the information about a transaction requested by transaction hash.",
+          request: requestPayload,
+          response: response,
+          formatted: `Transaction Details:
+Hash: ${response.hash}
+From: ${response.from}
+To: ${response.to || 'Contract Creation'}
+Value: ${valueInIMX} IMX
+Gas Price: ${gasPrice} Gwei
+Gas Limit: ${parseInt(response.gas, 16).toLocaleString()}
+Nonce: ${parseInt(response.nonce, 16)}
+Block Number: ${response.blockNumber ? parseInt(response.blockNumber, 16).toLocaleString() : 'Pending'}
+Block Hash: ${response.blockHash || 'Pending'}
+Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIndex, 16) : 'Pending'}`
+        };
+      }
+      displayOrder = ['eth_getTransactionByHash'];
+    } catch (error: any) {
+      console.error('Error getting transaction:', error);
+      result = {
+        method: 'eth_getTransactionByHash',
+        description: "Returns the information about a transaction requested by transaction hash.",
+        error: error.message || 'Failed to get transaction'
+      };
+      displayOrder = ['eth_getTransactionByHash'];
+    }
+  }
+
   async function handleRpcCall(method: string) {
     try {
-      // 새로운 메서드 호출 시 이전 결과들 초기화
+      // 새로운 RPC 호출시 이전 결과 초기화
       displayOrder = [];
       result = null;
+
+      // 폼 표시 상태 초기화
+      showTransactionForm = false;
+      showBlockByHashForm = false;
+      showTransactionByHashForm = false;
+      showSignTypedDataForm = false;
+      showPersonalSignForm = false;
 
       switch (method) {
         case 'eth_requestAccounts':
@@ -516,12 +920,12 @@
           const accounts = await passportProvider.request(requestAccountsPayload);
           result = {
             method: 'eth_requestAccounts',
-            description: "This method attempts to authenticate the user and initialises their Passport wallet before returning an array of wallet addresses. If the user does not already have an active session with Passport, then they will be prompted to log in.",
+            description: "Returns the list of accounts the user has granted access to.",
             request: requestAccountsPayload,
             response: accounts,
             formatted: JSON.stringify(accounts, null, 2)
           };
-          addToDisplayOrder('eth_requestAccounts');
+          displayOrder = ['eth_requestAccounts'];
           break;
 
         case 'eth_accounts':
@@ -534,33 +938,55 @@
             response: accountsList,
             formatted: JSON.stringify(accountsList, null, 2)
           };
-          addToDisplayOrder('eth_accounts');
+          displayOrder = ['eth_accounts'];
           break;
 
         case 'eth_chainId':
-          const chainIdPayload = { method: 'eth_chainId' };
-          const chainId = await passportProvider.request(chainIdPayload);
-          result = {
-            method: 'eth_chainId',
-            description: "Returns the current chain id.",
-            request: chainIdPayload,
-            response: chainId,
-            formatted: `Chain ID: ${chainId} (Decimal: ${parseInt(chainId, 16)}) - Immutable zkEVM ${currentNetwork === 'testnet' ? 'Testnet' : 'Mainnet'}`
-          };
-          addToDisplayOrder('eth_chainId');
+          try {
+            const response = await passportProvider.request({
+              method: 'eth_chainId',
+              params: []
+            });
+            result = {
+              method: 'eth_chainId',
+              description: "Returns the chain ID of the current network.",
+              request: { method: 'eth_chainId', params: [] },
+              response: response,
+              formatted: `Chain ID: ${parseInt(response, 16)} (0x${parseInt(response, 16).toString(16)})`
+            };
+            displayOrder = ['eth_chainId'];
+          } catch (error: any) {
+            result = {
+              method: 'eth_chainId',
+              description: "Returns the chain ID of the current network.",
+              error: error.message || 'Failed to get chain ID'
+            };
+            displayOrder = ['eth_chainId'];
+          }
           break;
 
         case 'eth_blockNumber':
-          const blockNumberPayload = { method: 'eth_blockNumber' };
-          const blockNumber = await passportProvider.request(blockNumberPayload);
-          result = {
-            method: 'eth_blockNumber',
-            description: "Returns the number of most recent block.",
-            request: blockNumberPayload,
-            response: blockNumber,
-            formatted: blockNumber
-          };
-          addToDisplayOrder('eth_blockNumber');
+          try {
+            const response = await passportProvider.request({
+              method: 'eth_blockNumber',
+              params: []
+            });
+            result = {
+              method: 'eth_blockNumber',
+              description: "Returns the number of most recent block.",
+              request: { method: 'eth_blockNumber', params: [] },
+              response: response,
+              formatted: `Current Block Number: ${parseInt(response, 16).toLocaleString()}`
+            };
+            displayOrder = ['eth_blockNumber'];
+          } catch (error: any) {
+            result = {
+              method: 'eth_blockNumber',
+              description: "Returns the number of most recent block.",
+              error: error.message || 'Failed to get block number'
+            };
+            displayOrder = ['eth_blockNumber'];
+          }
           break;
 
         case 'eth_gasPrice':
@@ -573,15 +999,16 @@
             response: gasPrice,
             formatted: `${(Number(gasPrice) / 1_000_000_000).toFixed(9)} Gwei`
           };
-          addToDisplayOrder('eth_gasPrice');
+          displayOrder = ['eth_gasPrice'];
           break;
 
         case 'eth_getBalance':
-          // 주소가 비어있으면 현재 로그인된 주소 사용
-          if (!balanceParams.address && userAddress) {
-            balanceParams.address = userAddress;
-          }
-          
+          // 메뉴 클릭 시에는 폼만 표시
+          balanceParams = {
+            address: userAddress || '',
+            blockParam: 'latest',
+            customBlockNumber: ''
+          };
           result = {
             method: 'eth_getBalance',
             description: "Returns the balance of the account of given address in wei.",
@@ -589,655 +1016,23 @@
             response: null,
             formatted: null
           };
-          addToDisplayOrder('eth_getBalance');
-          return;
-
-        case 'eth_getTransactionCount':
-          addToDisplayOrder('eth_getTransactionCount');
-          
-          try {
-            const address = transactionCountParams.address || userAddress;
-            if (!address) {
-              throw new Error('Address is required');
-            }
-            if (!address.startsWith('0x')) {
-              throw new Error('Valid address starting with 0x is required');
-            }
-
-            const blockNumber = /^\d+$/.test(transactionCountParams.blockNumber) ? 
-              '0x' + Number(transactionCountParams.blockNumber).toString(16) : 
-              transactionCountParams.blockNumber;
-
-            const txCountPayload = { 
-              method: 'eth_getTransactionCount',
-              params: [
-                address,
-                blockNumber
-              ]
-            };
-            const txCount = await passportProvider.request(txCountPayload);
-            const count = parseInt(txCount, 16);
-            result = {
-              method: 'eth_getTransactionCount',
-              description: "Returns the number of transactions sent from an address.",
-              request: txCountPayload,
-              response: txCount,
-              formatted: `Number of transactions sent from ${address}: ${count.toLocaleString()}`
-            };
-          } catch (error: any) {
-            console.error('Error getting transaction count:', error);
-            result = {
-              error: error.message || 'Failed to get transaction count'
-            };
-          }
-          break;
-
-        case 'eth_getStorageAt':
-          // 주소가 비어있으면 현재 로그인된 주소 사용
-          if (!storageParams.address && userAddress) {
-            storageParams.address = userAddress;
-          }
-
-          if (!storageParams.address) {
-            throw new Error('Address is required');
-          }
-
-          // slot이 비어있으면 기본값 사용
-          if (!storageParams.slot) {
-            storageParams.slot = '0x0';
-          }
-
-          const storageBlockParam = getBlockParameter(storageParams.blockParam, storageParams.customBlockNumber);
-          const storagePayload = { 
-            method: 'eth_getStorageAt',
-            params: [
-              storageParams.address,
-              storageParams.slot,
-              storageBlockParam
-            ]
-          };
-          const storageValue = await passportProvider.request(storagePayload);
-          result = {
-            method: 'eth_getStorageAt',
-            description: "Returns the value from a storage position at a given address.",
-            request: storagePayload,
-            response: storageValue,
-            formatted: `Storage Value: ${storageValue}`
-          };
-          addToDisplayOrder('eth_getStorageAt');
-          break;
-
-        case 'eth_estimateGas':
-          if (!displayOrder.includes('eth_estimateGas')) {
-            addToDisplayOrder('eth_estimateGas');
-            result = {
-              method: 'eth_estimateGas',
-              description: "Returns an estimate of the gas that would be used in a transaction with the given parameters.",
-              request: null,
-              response: null,
-              formatted: null
-            };
-            return;
-          }
-          
-          try {
-            // 주소가 비어있으면 현재 로그인된 주소 사용
-            if (!estimateGasParams.to && userAddress) {
-              estimateGasParams.to = userAddress;
-            }
-
-            if (!estimateGasParams.to) {
-              throw new Error('Destination address (to) is required');
-            }
-
-            const estimateBlockParam = getBlockParameter(estimateGasParams.blockParam, estimateGasParams.customBlockNumber);
-            const estimateGasPayload = {
-              method: 'eth_estimateGas',
-              params: [
-                {
-                  to: estimateGasParams.to,
-                  data: estimateGasParams.data || '0x',
-                  value: estimateGasParams.value || '0x0'
-                },
-                estimateBlockParam
-              ]
-            };
-            const estimatedGas = await passportProvider.request(estimateGasPayload);
-            result = {
-              method: 'eth_estimateGas',
-              description: "Returns an estimate of the gas that would be used in a transaction with the given parameters.",
-              request: estimateGasPayload,
-              response: estimatedGas,
-              formatted: `Estimated Gas: ${parseInt(estimatedGas, 16).toLocaleString()} units`
-            };
-          } catch (error: any) {
-            result = {
-              method: 'eth_estimateGas',
-              description: "Returns an estimate of the gas that would be used in a transaction with the given parameters.",
-              error: error.message || 'Failed to estimate gas'
-            };
-          }
-          break;
-
-        case 'eth_call':
-          if (!displayOrder.includes('eth_call')) {
-            addToDisplayOrder('eth_call');
-            result = {
-              method: 'eth_call',
-              description: "Executes a new message call immediately without creating a transaction on the blockchain.",
-              request: null,
-              response: null,
-              formatted: null
-            };
-            return;
-          }
-
-          try {
-            // 주소가 비어있으면 현재 로그인된 주소 사용
-            if (!callParams.to && userAddress) {
-              callParams.to = userAddress;
-            }
-
-            if (!callParams.to) {
-              throw new Error('Destination address (to) is required');
-            }
-
-            const callPayload = {
-              method: 'eth_call',
-              params: [
-                {
-                  to: callParams.to,
-                  data: callParams.data || '0x',
-                  value: callParams.value || '0x0'
-                },
-                callParams.blockNumber
-              ]
-            };
-            const callResult = await passportProvider.request(callPayload);
-            result = {
-              method: 'eth_call',
-              description: "Executes a new message call immediately without creating a transaction on the blockchain.",
-              request: callPayload,
-              response: callResult,
-              formatted: `Return Value: ${callResult}`
-            };
-          } catch (error: any) {
-            result = {
-              method: 'eth_call',
-              description: "Executes a new message call immediately without creating a transaction on the blockchain.",
-              error: error.message || 'Failed to execute call'
-            };
-          }
-          break;
-
-        case 'eth_getBlockByHash':
-          if (!showBlockByHashForm) {
-            showBlockByHashForm = true;
-            result = {
-              method: 'eth_getBlockByHash',
-              description: "Returns information about a block by hash.",
-              request: null,
-              response: null,
-              formatted: null
-            };
-            addToDisplayOrder('eth_getBlockByHash');
-            return;
-          }
-
-          try {
-            if (!blockByHashParams.blockHash || !blockByHashParams.blockHash.startsWith('0x')) {
-              throw new Error('Valid block hash starting with 0x is required');
-            }
-
-            const blockByHashPayload = {
-              method: 'eth_getBlockByHash',
-              params: [
-                blockByHashParams.blockHash,
-                blockByHashParams.includeTransactions
-              ]
-            };
-
-            console.log('Request with includeTransactions:', blockByHashParams.includeTransactions);
-            const blockByHash = await passportProvider.request(blockByHashPayload);
-            console.log('Response data:', JSON.stringify(blockByHash, null, 2));
-            
-            if (!blockByHash) {
-              throw new Error('Block not found');
-            }
-
-            const formattedBlockByHash = {
-              number: blockByHash.number ? parseInt(blockByHash.number, 16).toString() : 'N/A',
-              hash: blockByHash.hash || 'N/A',
-              parentHash: blockByHash.parentHash || 'N/A',
-              timestamp: blockByHash.timestamp ? 
-                new Date(parseInt(blockByHash.timestamp, 16) * 1000).toLocaleString() : 
-                'N/A',
-              transactions: formatTransactions(blockByHash.transactions),
-              gasUsed: blockByHash.gasUsed ? parseInt(blockByHash.gasUsed, 16).toLocaleString() : 'N/A',
-              gasLimit: blockByHash.gasLimit ? parseInt(blockByHash.gasLimit, 16).toLocaleString() : 'N/A',
-              miner: blockByHash.miner || 'N/A',
-              size: blockByHash.size ? parseInt(blockByHash.size, 16).toLocaleString() : 'N/A'
-            };
-
-            result = {
-              request: blockByHashPayload,
-              response: blockByHash,
-              formatted: `Block #${formattedBlockByHash.number}\n` +
-                `Hash: ${formattedBlockByHash.hash}\n` +
-                `Parent Hash: ${formattedBlockByHash.parentHash}\n` +
-                `Timestamp: ${formattedBlockByHash.timestamp}\n` +
-                `Gas Used: ${formattedBlockByHash.gasUsed}\n` +
-                `Gas Limit: ${formattedBlockByHash.gasLimit}\n` +
-                `Miner: ${formattedBlockByHash.miner}\n` +
-                `Size: ${formattedBlockByHash.size} bytes\n\n` +
-                `Transactions:\n${formattedBlockByHash.transactions}`,
-              note: 'Note: This result is based on the block information at the time of the request. The actual block content may change after the request.'
-            };
-          } catch (error: any) {
-            console.error('Error getting block by hash:', error);
-            result = {
-              error: error.message || 'Failed to get block'
-            };
-          }
-          addToDisplayOrder('eth_getBlockByHash');
-          break;
-
-        case 'eth_getBlockByNumber':
-          try {
-            const blockNumberParam = blockByNumberParams.blockNumber === 'latest' ? 
-              'latest' : 
-              (blockByNumberParams.blockNumber.startsWith('0x') ? 
-                blockByNumberParams.blockNumber : 
-                '0x' + parseInt(blockByNumberParams.blockNumber).toString(16));
-
-            const blockNumberPayload = {
-              method: 'eth_getBlockByNumber',
-              params: [
-                blockNumberParam,
-                blockByNumberParams.includeTransactions
-              ]
-            };
-
-            const blockByNumber = await passportProvider.request(blockNumberPayload);
-            
-            if (!blockByNumber) {
-              throw new Error('Block not found');
-            }
-
-            const formattedBlockByNumber = {
-              number: blockByNumber.number ? parseInt(blockByNumber.number, 16).toString() : 'N/A',
-              hash: blockByNumber.hash || 'N/A',
-              parentHash: blockByNumber.parentHash || 'N/A',
-              timestamp: blockByNumber.timestamp ? 
-                new Date(parseInt(blockByNumber.timestamp, 16) * 1000).toLocaleString() : 
-                'N/A',
-              transactions: formatTransactions(blockByNumber.transactions),
-              gasUsed: blockByNumber.gasUsed ? parseInt(blockByNumber.gasUsed, 16).toLocaleString() : 'N/A',
-              gasLimit: blockByNumber.gasLimit ? parseInt(blockByNumber.gasLimit, 16).toLocaleString() : 'N/A',
-              miner: blockByNumber.miner || 'N/A',
-              size: blockByNumber.size ? parseInt(blockByNumber.size, 16).toLocaleString() : 'N/A'
-            };
-
-            result = {
-              method: 'eth_getBlockByNumber',
-              description: "Returns information about a block by number.",
-              request: blockNumberPayload,
-              response: blockByNumber,
-              formatted: `Block #${formattedBlockByNumber.number}\n` +
-                `Hash: ${formattedBlockByNumber.hash}\n` +
-                `Parent Hash: ${formattedBlockByNumber.parentHash}\n` +
-                `Timestamp: ${formattedBlockByNumber.timestamp}\n` +
-                `Gas Used: ${formattedBlockByNumber.gasUsed}\n` +
-                `Gas Limit: ${formattedBlockByNumber.gasLimit}\n` +
-                `Miner: ${formattedBlockByNumber.miner}\n` +
-                `Size: ${formattedBlockByNumber.size} bytes\n\n` +
-                `Transactions:\n${formattedBlockByNumber.transactions}`,
-              note: 'Note: This result is based on the block information at the time of the request. The actual block content may change after the request.'
-            };
-          } catch (error: any) {
-            console.error('Error getting block:', error);
-            result = {
-              error: error.message || 'Failed to get block'
-            };
-          }
-          addToDisplayOrder('eth_getBlockByNumber');
-          break;
-
-        case 'eth_getTransactionByHash':
-          if (!showTransactionByHashForm) {
-            showTransactionByHashForm = true;
-            result = {
-              method: 'eth_getTransactionByHash',
-              description: "Returns the information about a transaction requested by transaction hash.",
-              request: null,
-              response: null,
-              formatted: null
-            };
-            addToDisplayOrder('eth_getTransactionByHash');
-            return;
-          }
-
-          if (!transactionByHashParams.hash) {
-            return;
-          }
-
-          try {
-            if (!transactionByHashParams.hash.startsWith('0x')) {
-              throw new Error('Valid transaction hash starting with 0x is required');
-            }
-
-            const txHashPayload = { 
-              method: 'eth_getTransactionByHash',
-              params: [transactionByHashParams.hash]
-            };
-
-            console.log('Requesting transaction:', txHashPayload);
-            const txByHash = await passportProvider.request(txHashPayload);
-            console.log('Transaction response:', txByHash);
-
-            if (!txByHash) {
-              throw new Error('Transaction not found');
-            }
-
-            // Format the transaction data
-            const formattedTx = {
-              hash: txByHash.hash,
-              blockHash: txByHash.blockHash,
-              blockNumber: txByHash.blockNumber ? parseInt(txByHash.blockNumber, 16).toLocaleString() : 'N/A',
-              from: txByHash.from,
-              to: txByHash.to || 'Contract Creation',
-              value: txByHash.value ? `${BigInt(txByHash.value) / BigInt(1e18)} IMX` : '0 IMX',
-              gasPrice: txByHash.gasPrice ? `${BigInt(txByHash.gasPrice) / BigInt(1e9)} Gwei` : 'N/A',
-              gas: txByHash.gas ? parseInt(txByHash.gas, 16).toLocaleString() : 'N/A',
-              nonce: txByHash.nonce ? parseInt(txByHash.nonce, 16).toString() : 'N/A',
-              transactionIndex: txByHash.transactionIndex ? 
-                parseInt(txByHash.transactionIndex, 16).toString() : 'N/A',
-              input: txByHash.input
-            };
-
-            result = {
-              request: txHashPayload,
-              response: txByHash,
-              formatted: `Transaction Details:\n` +
-                `Hash: ${formattedTx.hash}\n` +
-                `Block: #${formattedTx.blockNumber} (${formattedTx.blockHash})\n` +
-                `From: ${formattedTx.from}\n` +
-                `To: ${formattedTx.to}\n` +
-                `Value: ${formattedTx.value}\n` +
-                `Gas Limit: ${formattedTx.gas}\n` +
-                `Gas Price: ${formattedTx.gasPrice}\n` +
-                `Nonce: ${formattedTx.nonce}\n` +
-                `Transaction Index: ${formattedTx.transactionIndex}\n` +
-                `Input Data: ${formattedTx.input}`,
-              note: 'Note: This result is based on the transaction information at the time of the request. The actual transaction content may change after the request.'
-            };
-          } catch (error: any) {
-            console.error('Error getting transaction:', error);
-            result = {
-              error: error.message || 'Failed to get transaction'
-            };
-          }
-          addToDisplayOrder('eth_getTransactionByHash');
-          break;
-
-        case 'eth_getTransactionReceipt':
-          // 먼저 UI를 표시하기 위해 displayOrder 업데이트
-          addToDisplayOrder('eth_getTransactionReceipt');
-          
-          // 해시가 없으면 API 호출하지 않고 리턴
-          if (!transactionState.hash) {
-            result = null;
-            return;
-          }
-
-          try {
-            if (!transactionState.hash.startsWith('0x')) {
-              throw new Error('Valid transaction hash starting with 0x is required');
-            }
-
-            const txReceiptPayload = { 
-              method: 'eth_getTransactionReceipt',
-              params: [transactionState.hash]
-            };
-            const txReceipt = await passportProvider.request(txReceiptPayload);
-            
-            if (!txReceipt) {
-              throw new Error('Transaction receipt not found');
-            }
-
-            result = {
-              method: 'eth_getTransactionReceipt',
-              description: "Returns the receipt of a transaction requested by transaction hash.",
-              request: txReceiptPayload,
-              response: txReceipt,
-              formatted: `Transaction Receipt:\n` +
-                `Status: ${txReceipt.status === '0x1' ? 'Success' : 'Failed'}\n` +
-                `Block Number: ${parseInt(txReceipt.blockNumber, 16)}\n` +
-                `Gas Used: ${parseInt(txReceipt.gasUsed, 16).toLocaleString()}\n` +
-                `Block Hash: ${txReceipt.blockHash}\n` +
-                `Transaction Index: ${parseInt(txReceipt.transactionIndex, 16)}\n` +
-                `Contract Address: ${txReceipt.contractAddress || 'N/A'}\n` +
-                `Logs: ${txReceipt.logs.length} events`,
-              note: 'Note: This result is based on the transaction receipt information at the time of the request. The actual receipt content may change after the request.'
-            };
-          } catch (error: any) {
-            console.error('Error getting transaction receipt:', error);
-            result = {
-              error: error.message || 'Failed to get transaction receipt'
-            };
-          }
-          break;
-
-        case 'eth_getCode':
-          addToDisplayOrder('eth_getCode');
-          
-          if (!getCodeParams.address) {
-            result = null;
-            return;
-          }
-
-          try {
-            if (!getCodeParams.address.startsWith('0x')) {
-              throw new Error('Valid address starting with 0x is required');
-            }
-
-            // 블록 넘버 처리
-            let blockNumber = getCodeParams.blockNumber;
-            if (blockNumber === 'number') {
-              if (!getCodeParams.customBlockNumber) {
-                throw new Error('Block number is required when "Block number" is selected');
-              }
-              // 16진수 또는 10진수 입력 처리
-              if (getCodeParams.customBlockNumber.startsWith('0x')) {
-                blockNumber = getCodeParams.customBlockNumber;
-              } else if (/^\d+$/.test(getCodeParams.customBlockNumber)) {
-                blockNumber = '0x' + Number(getCodeParams.customBlockNumber).toString(16);
-              } else {
-                throw new Error('Invalid block number format. Use decimal or hex (0x) format');
-              }
-            }
-
-            const codePayload = { 
-              method: 'eth_getCode',
-              params: [
-                getCodeParams.address,
-                blockNumber
-              ]
-            };
-            const contractCode = await passportProvider.request(codePayload);
-            
-            // 바이트코드 길이 계산 (0x 제외)
-            const byteLength = contractCode === '0x' ? 0 : (contractCode.length - 2) / 2;
-            
-            result = {
-              method: 'eth_getCode',
-              description: "Returns the bytecode of a smart contract at a given address.",
-              request: codePayload,
-              response: contractCode,
-              formatted: contractCode === '0x' 
-                ? `Contract Bytecode at ${getCodeParams.address}:\n(Not a contract)`
-                : `Contract Bytecode at ${getCodeParams.address}:\n` +
-                  `Bytecode Length: ${byteLength} bytes\n` +
-                  `Solidity Version: ${getSolidityVersion(contractCode)}\n` +
-                  `Bytecode:\n${contractCode.slice(0, 100)}...\n` +
-                  `(Full bytecode available in Response Payload)`,
-              note: 'Note: This result is based on the contract code information at the time of the request. The actual code content may change after the request.'
-            };
-          } catch (error: any) {
-            console.error('Error getting contract code:', error);
-            result = {
-              error: error.message || 'Failed to get contract code'
-            };
-          }
-          break;
-
-        case 'eth_signTypedData_v4':
-          if (!showSignTypedDataForm) {
-            showSignTypedDataForm = true;
-            result = {
-              method: 'eth_signTypedData_v4',
-              description: "Enables passport users to sign EIP-712 structured messages off-chain.",
-              request: null,
-              response: null,
-              formatted: null
-            };
-            addToDisplayOrder('eth_signTypedData_v4');
-            return;
-          }
-
-          try {
-            if (!userAddress) {
-              throw new Error('Please connect your wallet first');
-            }
-
-            // Update the from wallet address with the connected wallet
-            signTypedDataParams.typedData.message.from.wallet = userAddress;
-
-            const signTypedDataPayload = { 
-              method: 'eth_signTypedData_v4',
-              params: [
-                userAddress,
-                JSON.stringify(signTypedDataParams.typedData)
-              ]
-            };
-
-            const signedData = await passportProvider.request(signTypedDataPayload);
-            
-            // 서명 데이터 분석
-            const signature = signedData.slice(2); // 0x 제거
-            const r = '0x' + signature.slice(0, 64);
-            const s = '0x' + signature.slice(64, 128);
-            const v = '0x' + signature.slice(128, 130);
-
-            result = {
-              request: {
-                ...signTypedDataPayload,
-                params: [signTypedDataPayload.params[0], JSON.parse(signTypedDataPayload.params[1])]
-              },
-              response: signedData,
-              formatted: `Signature Details:\n` +
-                `\nSigner: ${userAddress}\n` +
-                `\nTyped Data:\n` +
-                `• Domain:\n` +
-                `  - Name: ${signTypedDataParams.typedData.domain.name}\n` +
-                `  - Version: ${signTypedDataParams.typedData.domain.version}\n` +
-                `  - Chain ID: ${signTypedDataParams.typedData.domain.chainId}\n` +
-                `  - Verifying Contract: ${signTypedDataParams.typedData.domain.verifyingContract}\n` +
-                `\n• Message:\n` +
-                `  - From: ${signTypedDataParams.typedData.message.from.name} (${signTypedDataParams.typedData.message.from.wallet})\n` +
-                `  - To: ${signTypedDataParams.typedData.message.to.name} (${signTypedDataParams.typedData.message.to.wallet})\n` +
-                `  - Contents: ${signTypedDataParams.typedData.message.contents}\n` +
-                `\nSignature Components:\n` +
-                `• Full Signature: ${signedData}\n` +
-                `• R: ${r}\n` +
-                `• S: ${s}\n` +
-                `• V: ${v}\n` +
-                `\nVerification:\n` +
-                `• Primary Type: ${signTypedDataParams.typedData.primaryType}\n` +
-                `• Types Hash: Mail(Person from,Person to,string contents)\n` +
-                `• Person Type: Person(string name,address wallet)\n` +
-                `\nNote: This signature can be verified on-chain using EIP-712 verification methods.`,
-              note: 'Note: This result is based on the signature information at the time of the request. The actual signature content may change after the request.'
-            };
-          } catch (error: any) {
-            console.error('Error signing typed data:', error);
-            result = {
-              error: error.message || 'Failed to sign typed data'
-            };
-          }
-          break;
-
-        case 'personal_sign':
-          if (!showPersonalSignForm) {
-            showPersonalSignForm = true;
-            personalSignParams.fromAddress = userAddress || '';  // Initialize with current connected address
-            result = {
-              method: 'personal_sign',
-              description: "Enables passport users to sign ERC-191 personal messages off-chain.",
-              request: null,
-              response: null,
-              formatted: null
-            };
-            addToDisplayOrder('personal_sign');
-            return;
-          }
-
-          try {
-            if (!personalSignParams.fromAddress) {
-              throw new Error('Please enter the signer address');
-            }
-
-            if (!personalSignParams.fromAddress.startsWith('0x')) {
-              throw new Error('Invalid address format. Address must start with 0x');
-            }
-
-            const messageToSign = personalSignParams.message;
-            const signPayload = { 
-              method: 'personal_sign',
-              params: [messageToSign, personalSignParams.fromAddress]  // Update order: [message, address]
-            };
-
-            const signedMessage = await passportProvider.request(signPayload);
-            
-            // 서명 데이터 분석
-            const signature = signedMessage.slice(2);
-            const r = '0x' + signature.slice(0, 64);
-            const s = '0x' + signature.slice(64, 128);
-            const v = '0x' + signature.slice(128, 130);
-
-            const prefix = '\x19Ethereum Signed Message:\n' + messageToSign.length;
-            const prefixedMessage = prefix + messageToSign;
-
-            result = {
-              request: signPayload,
-              response: signedMessage,
-              formatted: `Signature Details:\n` +
-                `\nSigner: ${personalSignParams.fromAddress}\n` +
-                `\nMessage Details:\n` +
-                `• Original Message: ${messageToSign}\n` +
-                `• Message Length: ${messageToSign.length} characters\n` +
-                `• Prefixed Message: ${prefixedMessage}\n` +
-                `\nSignature Components:\n` +
-                `• Full Signature: ${signedMessage}\n` +
-                `• R: ${r}\n` +
-                `• S: ${s}\n` +
-                `• V: ${v}\n` +
-                `\nNote: This signature follows ERC-191 personal_sign standard.`,
-              note: 'Note: This result is based on the signature information at the time of the request. The actual signature content may change after the request.'
-            };
-          } catch (error: any) {
-            console.error('Error signing message:', error);
-            result = {
-              error: error.message || 'Failed to sign message'
-            };
-          }
+          displayOrder = ['eth_getBalance'];
           break;
 
         case 'eth_sendTransaction':
           if (!isConnected) {
             await handleLogin();
           }
+          
           showTransactionForm = true;
+          transactionParams = {
+            to: DEFAULT_TRANSACTION.to,
+            value: DEFAULT_TRANSACTION.value,
+            data: '',
+            gasLimit: '',
+            maxFeePerGas: '',
+            maxPriorityFeePerGas: ''
+          };
           result = {
             method: 'eth_sendTransaction',
             description: "Creates new message call transaction or a contract creation, if the data field contains code.",
@@ -1245,16 +1040,199 @@
             response: null,
             formatted: null
           };
-          transactionParams = {
-            to: '',
-            value: '',
-            data: '',
-            gasLimit: '',
-            maxFeePerGas: '',
-            maxPriorityFeePerGas: ''
+          displayOrder = ['eth_sendTransaction'];
+          break;
+
+        case 'eth_getTransactionCount':
+          // 메뉴 클릭 시에는 폼만 표시
+          transactionCountParams = {
+            address: userAddress || '',
+            blockNumber: 'latest',
+            customBlockNumber: ''
           };
-          addToDisplayOrder('eth_sendTransaction');
-          return;
+          result = {
+            method: 'eth_getTransactionCount',
+            description: "Returns the number of transactions sent from an address.",
+            request: null,
+            response: null
+          };
+          displayOrder = ['eth_getTransactionCount'];
+          break;
+
+        case 'eth_getStorageAt':
+          // 메뉴 클릭 시에는 폼만 표시
+          storageParams = {
+            address: userAddress || '',
+            slot: '0x0',
+            blockParam: 'latest',
+            customBlockNumber: ''
+          };
+          result = {
+            method: 'eth_getStorageAt',
+            description: "Returns the value from a storage position at a given address.",
+            request: null,
+            response: null,
+            formatted: null
+          };
+          displayOrder = ['eth_getStorageAt'];
+          break;
+
+        case 'eth_estimateGas':
+          // 메뉴 클릭 시에는 폼만 표시
+          estimateGasParams = {
+            to: userAddress || '',  // 현재 로그인된 주소를 기본값으로 설정
+            data: '0x',
+            value: '0x0',
+            blockParam: 'latest',
+            customBlockNumber: ''
+          };
+          result = {
+            method: 'eth_estimateGas',
+            description: "Generates and returns an estimate of how much gas is necessary to allow the transaction to complete.",
+            request: null,
+            response: null,
+            formatted: null
+          };
+          displayOrder = ['eth_estimateGas'];
+          break;
+
+        case 'eth_call':
+          // 메뉴 클릭 시에는 폼만 표시
+          callParams = {
+            to: '',
+            data: '0x',
+            value: '0x0',
+            blockNumber: 'latest'
+          };
+          result = {
+            method: 'eth_call',
+            description: "Executes a new message call immediately without creating a transaction on the blockchain.",
+            request: null,
+            response: null
+          };
+          displayOrder = ['eth_call'];
+          break;
+
+        case 'eth_getBlockByHash':
+          // 메뉴 클릭 시에는 폼만 표시
+          blockByHashParams = {
+            blockHash: '',
+            includeTransactions: false
+          };
+          result = {
+            method: 'eth_getBlockByHash',
+            description: "Returns information about a block by hash.",
+            request: null,
+            response: null
+          };
+          displayOrder = ['eth_getBlockByHash'];
+          break;
+
+        case 'eth_getBlockByNumber':
+          // 메뉴 클릭 시에는 폼만 표시
+          blockByNumberParams = {
+            blockNumber: 'latest',
+            includeTransactions: false,
+            customBlockNumber: ''
+          };
+          result = {
+            method: 'eth_getBlockByNumber',
+            description: "Returns information about a block by block number.",
+            request: null,
+            response: null
+          };
+          displayOrder = ['eth_getBlockByNumber'];
+          break;
+
+        case 'eth_getTransactionByHash':
+          // 메뉴 클릭 시에는 폼만 표시
+          transactionByHashParams = {
+            hash: ''
+          };
+          result = {
+            method: 'eth_getTransactionByHash',
+            description: "Returns the information about a transaction requested by transaction hash.",
+            request: null,
+            response: null
+          };
+          displayOrder = ['eth_getTransactionByHash'];
+          break;
+
+        case 'eth_getTransactionReceipt':
+          // 메뉴 클릭 시에는 폼만 표시
+          transactionReceiptParams = {
+            hash: ''
+          };
+          result = {
+            method: 'eth_getTransactionReceipt',
+            description: "Returns the receipt of a transaction by transaction hash.",
+            request: null,
+            response: null
+          };
+          displayOrder = ['eth_getTransactionReceipt'];
+          break;
+
+        case 'eth_getTransactionCount':
+          // 메뉴 클릭 시에는 폼만 표시
+          transactionCountParams = {
+            address: userAddress || '',
+            blockNumber: 'latest',
+            customBlockNumber: ''
+          };
+          result = {
+            method: 'eth_getTransactionCount',
+            description: "Returns the number of transactions sent from an address.",
+            request: null,
+            response: null
+          };
+          displayOrder = ['eth_getTransactionCount'];
+          break;
+
+        case 'eth_getCode':
+          // 메뉴 클릭 시에는 폼만 표시
+          getCodeParams = {
+            address: userAddress || '',
+            blockNumber: 'latest',
+            customBlockNumber: ''
+          };
+          result = {
+            method: 'eth_getCode',
+            description: "Returns code at a given address.",
+            request: null,
+            response: null
+          };
+          displayOrder = ['eth_getCode'];
+          break;
+
+        case 'eth_signTypedData_v4':
+          // 메뉴 클릭 시에는 폼만 표시
+          showSignTypedDataForm = true;
+          signTypedDataParams.typedData.domain.chainId = NETWORK_CONFIG[currentNetwork].chainId;
+          signTypedDataParams.typedData.message.from.wallet = userAddress || '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826';
+          result = {
+            method: 'eth_signTypedData_v4',
+            description: "Enables passport users to sign EIP-712 structured messages off-chain.",
+            request: null,
+            response: null
+          };
+          displayOrder = ['eth_signTypedData_v4'];
+          break;
+
+        case 'personal_sign':
+          // 메뉴 클릭 시에는 폼만 표시
+          showPersonalSignForm = true;
+          personalSignParams = {
+            message: 'Hello, Immutable zkEVM',
+            fromAddress: userAddress || ''
+          };
+          result = {
+            method: 'personal_sign',
+            description: "Signs a message using the personal_sign method.",
+            request: null,
+            response: null
+          };
+          displayOrder = ['personal_sign'];
+          break;
       }
     } catch (error: any) {
       console.error(`RPC call failed (${method}):`, error);
@@ -1262,7 +1240,7 @@
         method,
         error: error.message || 'Unknown error occurred'
       };
-      addToDisplayOrder(method.replace('eth_', ''));
+      displayOrder = [method];
     }
   }
 
@@ -1282,10 +1260,7 @@
       const tx = {
         to: transactionParams.to || DEFAULT_TRANSACTION.to,
         value: hexValue,
-        data: transactionParams.data || '0x',
-        gasLimit: transactionParams.gasLimit ? BigInt(transactionParams.gasLimit) : undefined,
-        maxFeePerGas: transactionParams.maxFeePerGas ? ethers.parseUnits(transactionParams.maxFeePerGas, 'gwei') : undefined,
-        maxPriorityFeePerGas: transactionParams.maxPriorityFeePerGas ? ethers.parseUnits(transactionParams.maxPriorityFeePerGas, 'gwei') : undefined,
+        data: transactionParams.data || '0x'
       };
       
       result = {
@@ -1310,20 +1285,13 @@
         throw new Error('Transaction receipt is null');
       }
       
-      const gasPrice = (receipt as any).effectiveGasPrice || (receipt as any).gasPrice || 0n;
-      const gasFee = receipt.gasUsed * BigInt(gasPrice);
-      const gasPriceInGwei = Number(gasPrice) / 1_000_000_000;
-      const maxFeePerGasInGwei = tx.maxFeePerGas ? Number(tx.maxFeePerGas) / 1_000_000_000 : undefined;
-      const maxPriorityFeePerGasInGwei = tx.maxPriorityFeePerGas ? Number(tx.maxPriorityFeePerGas) / 1_000_000_000 : undefined;
-      
       const details = {
         hash: transactionResponse.hash,
         blockNumber: receipt.blockNumber,
         value: `${ethers.formatEther(tx.value || '0')} tIMX`,
-        transactionFee: `${ethers.formatEther(gasFee)} tIMX`,
-        gasPrice: `${ethers.formatEther(gasPrice)} tIMX (${gasPriceInGwei.toFixed(9)} Gwei)`,
-        gasUsage: `${receipt.gasUsed} | ${tx.gasLimit || receipt.gasUsed} = ${((Number(receipt.gasUsed) / Number(tx.gasLimit || receipt.gasUsed)) * 100).toFixed(2)}%`,
-        gasFees: `Base: ${gasPriceInGwei.toFixed(9)} Gwei | Max: ${maxFeePerGasInGwei?.toFixed(9) || gasPriceInGwei.toFixed(9)} Gwei | Max priority: ${maxPriorityFeePerGasInGwei?.toFixed(0) || gasPriceInGwei.toFixed(0)} Gwei`,
+        from: receipt.from,
+        to: receipt.to,
+        status: receipt.status === 1 ? 'Success' : 'Failed'
       };
 
       result = {
@@ -1395,6 +1363,320 @@
       return `v${major}.${minor}.${patch}`;
     }
     return 'Unknown';
+  }
+
+  async function executeGetTransactionReceipt() {
+    console.log('Executing get transaction receipt');
+    console.log('Transaction receipt params:', transactionReceiptParams);
+
+    try {
+      if (!transactionReceiptParams.hash) {
+        throw new Error('Transaction hash is required');
+      }
+
+      if (!transactionReceiptParams.hash.startsWith('0x')) {
+        throw new Error('Transaction hash must start with 0x');
+      }
+
+      if (!passportProvider) {
+        throw new Error('Provider not initialized');
+      }
+
+      const requestPayload = {
+        method: 'eth_getTransactionReceipt',
+        params: [transactionReceiptParams.hash]
+      };
+
+      console.log('Getting transaction receipt with payload:', requestPayload);
+      const response = await passportProvider.request(requestPayload);
+      console.log('Transaction receipt response:', response);
+
+      if (!response) {
+        result = {
+          method: 'eth_getTransactionReceipt',
+          description: "Returns the receipt of a transaction by transaction hash.",
+          request: requestPayload,
+          response: null,
+          formatted: 'Transaction receipt not found (transaction may be pending)'
+        };
+      } else {
+        const gasUsed = parseInt(response.gasUsed, 16).toLocaleString();
+        const cumulativeGasUsed = parseInt(response.cumulativeGasUsed, 16).toLocaleString();
+        const effectiveGasPrice = response.effectiveGasPrice ? 
+          (BigInt(response.effectiveGasPrice) / BigInt(1e9)).toString() : 
+          'Not available';
+        
+        let logs = '';
+        if (response.logs && response.logs.length > 0) {
+          logs = '\n\nEvent Logs:\n' + response.logs.map((log: any, index: number) => 
+            `Log ${index + 1}:\n` +
+            `  Address: ${log.address}\n` +
+            `  Topics: ${log.topics.join('\n          ')}\n` +
+            `  Data: ${log.data}`
+          ).join('\n\n');
+        }
+
+        result = {
+          method: 'eth_getTransactionReceipt',
+          description: "Returns the receipt of a transaction by transaction hash.",
+          request: requestPayload,
+          response: response,
+          formatted: `Transaction Receipt:
+Hash: ${response.transactionHash}
+Status: ${response.status === '0x1' ? 'Success' : 'Failed'}
+Block Number: ${parseInt(response.blockNumber, 16).toLocaleString()}
+Block Hash: ${response.blockHash}
+From: ${response.from}
+To: ${response.to || 'Contract Creation'}
+Contract Address: ${response.contractAddress || 'N/A'}
+Gas Used: ${gasUsed}
+Cumulative Gas Used: ${cumulativeGasUsed}
+Effective Gas Price: ${effectiveGasPrice} Gwei
+Transaction Index: ${parseInt(response.transactionIndex, 16)}${logs}`
+        };
+      }
+      displayOrder = ['eth_getTransactionReceipt'];
+    } catch (error: any) {
+      console.error('Error getting transaction receipt:', error);
+      result = {
+        method: 'eth_getTransactionReceipt',
+        description: "Returns the receipt of a transaction by transaction hash.",
+        error: error.message || 'Failed to get transaction receipt'
+      };
+      displayOrder = ['eth_getTransactionReceipt'];
+    }
+  }
+
+  async function executeGetTransactionCount() {
+    console.log('Executing get transaction count');
+    console.log('Transaction count params:', transactionCountParams);
+
+    try {
+      const address = transactionCountParams.address || userAddress;
+      if (!address) {
+        throw new Error('Address is required');
+      }
+      if (!address.startsWith('0x')) {
+        throw new Error('Valid address starting with 0x is required');
+      }
+
+      let blockParameter = transactionCountParams.blockNumber;
+      if (blockParameter === 'number') {
+        if (!transactionCountParams.customBlockNumber) {
+          throw new Error('Block number is required when "Block number" is selected');
+        }
+        // Handle both hex and decimal input
+        if (transactionCountParams.customBlockNumber.startsWith('0x')) {
+          blockParameter = transactionCountParams.customBlockNumber;
+        } else if (/^\d+$/.test(transactionCountParams.customBlockNumber)) {
+          blockParameter = '0x' + Number(transactionCountParams.customBlockNumber).toString(16);
+        } else {
+          throw new Error('Invalid block number format. Use decimal or hex (0x) format');
+        }
+      }
+
+      const requestPayload = {
+        method: 'eth_getTransactionCount',
+        params: [address, blockParameter]
+      };
+
+      console.log('Getting transaction count with payload:', requestPayload);
+      const response = await passportProvider.request(requestPayload);
+      console.log('Transaction count response:', response);
+
+      result = {
+        method: 'eth_getTransactionCount',
+        description: "Returns the number of transactions sent from an address.",
+        request: requestPayload,
+        response: response,
+        formatted: `Number of transactions sent from ${address}: ${parseInt(response, 16).toLocaleString()}`
+      };
+      displayOrder = ['eth_getTransactionCount'];
+    } catch (error: any) {
+      console.error('Error getting transaction count:', error);
+      result = {
+        method: 'eth_getTransactionCount',
+        description: "Returns the number of transactions sent from an address.",
+        error: error.message || 'Failed to get transaction count'
+      };
+      displayOrder = ['eth_getTransactionCount'];
+    }
+  }
+
+  async function executeGetCode() {
+    console.log('Executing get code');
+    console.log('Get code params:', getCodeParams);
+
+    try {
+      if (!getCodeParams.address) {
+        throw new Error('Address is required');
+      }
+
+      if (!getCodeParams.address.startsWith('0x')) {
+        throw new Error('Valid address starting with 0x is required');
+      }
+
+      if (!passportProvider) {
+        throw new Error('Provider not initialized');
+      }
+
+      let blockParameter = getCodeParams.blockNumber;
+      if (blockParameter === 'number') {
+        if (!getCodeParams.customBlockNumber) {
+          throw new Error('Block number is required when "Block number" is selected');
+        }
+        // Handle both hex and decimal input
+        if (getCodeParams.customBlockNumber.startsWith('0x')) {
+          blockParameter = getCodeParams.customBlockNumber;
+        } else if (/^\d+$/.test(getCodeParams.customBlockNumber)) {
+          blockParameter = '0x' + Number(getCodeParams.customBlockNumber).toString(16);
+        } else {
+          throw new Error('Invalid block number format. Use decimal or hex (0x) format');
+        }
+      }
+
+      const requestPayload = {
+        method: 'eth_getCode',
+        params: [getCodeParams.address, blockParameter]
+      };
+
+      console.log('Getting code with payload:', requestPayload);
+      const response = await passportProvider.request(requestPayload);
+      console.log('Code response:', response);
+
+      // Check if it's a contract
+      const isContract = response !== '0x';
+      const bytecodeSize = (response.length - 2) / 2; // -2 for '0x' prefix, /2 for hex pairs
+
+      let formattedResponse = isContract ? 
+        `Contract detected at ${getCodeParams.address}\nBytecode size: ${bytecodeSize} bytes\nBytecode: ${response}` :
+        `No contract code found at ${getCodeParams.address} (this is a regular address)`;
+
+      result = {
+        method: 'eth_getCode',
+        description: "Returns code at a given address.",
+        request: requestPayload,
+        response: response,
+        formatted: formattedResponse
+      };
+      displayOrder = ['eth_getCode'];
+    } catch (error: any) {
+      console.error('Error getting code:', error);
+      result = {
+        method: 'eth_getCode',
+        description: "Returns code at a given address.",
+        error: error.message || 'Failed to get code'
+      };
+      displayOrder = ['eth_getCode'];
+    }
+  }
+
+  async function executeSignTypedData() {
+    console.log('Executing sign typed data');
+    console.log('Sign typed data params:', signTypedDataParams);
+
+    try {
+      if (!isConnected) {
+        throw new Error('Please connect your wallet first');
+      }
+
+      if (!passportProvider) {
+        throw new Error('Provider not initialized');
+      }
+
+      // Update chainId based on current network
+      signTypedDataParams.typedData.domain.chainId = NETWORK_CONFIG[currentNetwork].chainId;
+
+      const requestPayload = {
+        method: 'eth_signTypedData_v4',
+        params: [
+          userAddress,
+          JSON.stringify(signTypedDataParams.typedData)
+        ]
+      };
+
+      console.log('Signing typed data with payload:', requestPayload);
+      const signature = await passportProvider.request(requestPayload);
+      console.log('Signature:', signature);
+
+      result = {
+        method: 'eth_signTypedData_v4',
+        description: "Signs typed structured data using the EIP-712 specification (v4).",
+        request: {
+          ...requestPayload,
+          params: [requestPayload.params[0], JSON.parse(requestPayload.params[1])]
+        },
+        response: signature,
+        formatted: `Signature: ${signature}\n\nSigned Message Details:
+Domain:
+- Name: ${signTypedDataParams.typedData.domain.name}
+- Version: ${signTypedDataParams.typedData.domain.version}
+- Chain ID: ${signTypedDataParams.typedData.domain.chainId}
+- Verifying Contract: ${signTypedDataParams.typedData.domain.verifyingContract}
+
+Message:
+- From: ${signTypedDataParams.typedData.message.from.name} (${signTypedDataParams.typedData.message.from.wallet})
+- To: ${signTypedDataParams.typedData.message.to.name} (${signTypedDataParams.typedData.message.to.wallet})
+- Contents: ${signTypedDataParams.typedData.message.contents}`
+      };
+      displayOrder = ['eth_signTypedData_v4'];
+    } catch (error: any) {
+      console.error('Error signing typed data:', error);
+      result = {
+        method: 'eth_signTypedData_v4',
+        description: "Signs typed structured data using the EIP-712 specification (v4).",
+        error: error.message || 'Failed to sign typed data'
+      };
+      displayOrder = ['eth_signTypedData_v4'];
+    }
+  }
+
+  async function executePersonalSign() {
+    console.log('Executing personal sign');
+    console.log('Personal sign params:', personalSignParams);
+
+    try {
+      if (!isConnected) {
+        throw new Error('Please connect your wallet first');
+      }
+
+      if (!passportProvider) {
+        throw new Error('Provider not initialized');
+      }
+
+      if (!personalSignParams.fromAddress) {
+        throw new Error('Address is required');
+      }
+
+      const requestPayload = {
+        method: 'personal_sign',
+        params: [
+          personalSignParams.message,
+          personalSignParams.fromAddress
+        ]
+      };
+
+      console.log('Signing message with payload:', requestPayload);
+      const signature = await passportProvider.request(requestPayload);
+      console.log('Signature:', signature);
+
+      result = {
+        method: 'personal_sign',
+        description: "Signs a message using the personal_sign method.",
+        request: requestPayload,
+        response: signature,
+        formatted: `Signature: ${signature}\n\nSigned Message Details:\nFrom: ${personalSignParams.fromAddress}\nMessage: ${personalSignParams.message}`
+      };
+      displayOrder = ['personal_sign'];
+    } catch (error: any) {
+      console.error('Error signing message:', error);
+      result = {
+        method: 'personal_sign',
+        description: "Signs a message using the personal_sign method.",
+        error: error.message || 'Failed to sign message'
+      };
+      displayOrder = ['personal_sign'];
+    }
   }
 </script>
 
@@ -1525,13 +1807,25 @@
                 class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
                 on:click={() => handleRpcCall('eth_estimateGas')}
               >
-                Estimate Gas
+                Get Estimate Gas
               </button>
               <button
                 class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
                 on:click={() => handleRpcCall('eth_call')}
               >
                 Call
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_chainId')}
+              >
+                Get Chain ID
+              </button>
+              <button
+                class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                on:click={() => handleRpcCall('eth_blockNumber')}
+              >
+                Get Block Number
               </button>
               <button
                 class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
@@ -1604,168 +1898,9 @@
                     {/if}
                   </div>
 
-                  <!-- Form Content -->
-                  {#if type === 'estimateGas'}
-                    <div class="space-y-4">
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-to">
-                          To Address <span class="text-red-600">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          id="estimate-to"
-                          bind:value={estimateGasParams.to}
-                          placeholder={userAddress || '0x...'}
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                        />
-                        <p class="mt-1 text-xs text-gray-500">The destination address of the message. Defaults to connected address if empty.</p>
-                      </div>
-
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-data">
-                          Data
-                        </label>
-                        <input
-                          type="text"
-                          id="estimate-data"
-                          bind:value={estimateGasParams.data}
-                          placeholder="0x"
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                        />
-                        <p class="mt-1 text-xs text-gray-500">The byte string containing the associated data of the message, or contract initialization code (optional).</p>
-                      </div>
-
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-value">
-                          Value
-                        </label>
-                        <input
-                          type="text"
-                          id="estimate-value"
-                          bind:value={estimateGasParams.value}
-                          placeholder="0x0"
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                        />
-                        <p class="mt-1 text-xs text-gray-500">The value transferred for the transaction in wei, encoded as a hex string (optional).</p>
-                      </div>
-
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-block-param">
-                          Block Parameter
-                        </label>
-                        <select
-                          id="estimate-block-param"
-                          bind:value={estimateGasParams.blockParam}
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-                        >
-                          <option value="latest">latest</option>
-                          <option value="earliest">earliest</option>
-                          <option value="pending">pending</option>
-                          <option value="safe">safe</option>
-                          <option value="finalized">finalized</option>
-                          <option value="number">Block Number</option>
-                        </select>
-                        <p class="mt-1 text-xs text-gray-500">The block number to get the gas estimate at. If omitted, the latest block is used.</p>
-                      </div>
-
-                      {#if estimateGasParams.blockParam === 'number'}
-                        <div>
-                          <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-block-number">
-                            Block Number
-                          </label>
-                          <input
-                            type="text"
-                            id="estimate-block-number"
-                            bind:value={estimateGasParams.customBlockNumber}
-                            placeholder="123 or 0x7b"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                          />
-                          <p class="mt-1 text-xs text-gray-500">Enter decimal number or hexadecimal with 0x prefix</p>
-                        </div>
-                      {/if}
-
-                      <button
-                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
-                        on:click={() => handleRpcCall('eth_estimateGas')}
-                      >
-                        Estimate Gas
-                      </button>
-                    </div>
-                  {/if}
-
-                  {#if type === 'call'}
-                    <div class="space-y-4">
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-to">
-                          To Address <span class="text-red-600">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          id="call-to"
-                          bind:value={callParams.to}
-                          placeholder={userAddress || '0x...'}
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                        />
-                        <p class="mt-1 text-xs text-gray-500">The address to execute the call on. Defaults to connected address if empty.</p>
-                      </div>
-
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-data">
-                          Data
-                        </label>
-                        <input
-                          type="text"
-                          id="call-data"
-                          bind:value={callParams.data}
-                          placeholder="0x"
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                        />
-                        <p class="mt-1 text-xs text-gray-500">The data to be executed in the call (e.g. encoded function call).</p>
-                      </div>
-
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-value">
-                          Value
-                        </label>
-                        <input
-                          type="text"
-                          id="call-value"
-                          bind:value={callParams.value}
-                          placeholder="0x0"
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                        />
-                        <p class="mt-1 text-xs text-gray-500">The value to be sent with the call in wei, encoded as a hex string (optional).</p>
-                      </div>
-
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-block-number">
-                          Block Number
-                        </label>
-                        <select
-                          id="call-block-number"
-                          bind:value={callParams.blockNumber}
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-                        >
-                          <option value="latest">latest</option>
-                          <option value="earliest">earliest</option>
-                          <option value="pending">pending</option>
-                          <option value="safe">safe</option>
-                          <option value="finalized">finalized</option>
-                        </select>
-                        <p class="mt-1 text-xs text-gray-500">The block number to execute the call at. If omitted, the latest block is used.</p>
-                      </div>
-
-                      <button
-                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
-                        on:click={() => handleRpcCall('eth_call')}
-                      >
-                        Execute Call
-                      </button>
-                    </div>
-                  {/if}
-
-                  {#if type === 'getBalance'}
-                    <div class="space-y-4">
+                  <!-- Input Forms -->
+                  {#if type === 'eth_getBalance'}
+                    <div class="space-y-4 mb-4">
                       <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="balance-address">
                           Address <span class="text-red-600">*</span>
@@ -1817,9 +1952,646 @@
 
                       <button
                         class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
-                        on:click={() => handleRpcCall('eth_getBalance')}
+                        on:click={executeGetBalance}
                       >
                         Get Balance
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'eth_sendTransaction' && showTransactionForm}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="tx-to">
+                          To Address <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="tx-to"
+                          bind:value={transactionParams.to}
+                          placeholder="0x..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The address to send transaction to.</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="tx-value">
+                          Value (in Wei) <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="tx-value"
+                          bind:value={transactionParams.value}
+                          placeholder="1000000000000000"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">Amount of wei to send.</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="tx-data">
+                          Data
+                        </label>
+                        <input
+                          type="text"
+                          id="tx-data"
+                          bind:value={transactionParams.data}
+                          placeholder="0x..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">Optional data to include in the transaction.</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="tx-gas-limit">
+                          Gas Limit
+                        </label>
+                        <input
+                          type="text"
+                          id="tx-gas-limit"
+                          bind:value={transactionParams.gasLimit}
+                          placeholder="21000"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">Optional gas limit (default: estimated automatically).</p>
+                      </div>
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={sendTransaction}
+                      >
+                        Send Transaction
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'eth_getStorageAt'}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="storage-address">
+                          Address <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="storage-address"
+                          bind:value={storageParams.address}
+                          placeholder={userAddress || '0x...'}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The address of the storage to read from.</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="storage-slot">
+                          Storage Slot <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="storage-slot"
+                          bind:value={storageParams.slot}
+                          placeholder="0x0"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The position in the storage to read from.</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="storage-block">
+                          Block Parameter
+                        </label>
+                        <select
+                          id="storage-block"
+                          bind:value={storageParams.blockParam}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                        >
+                          <option value="latest">latest</option>
+                          <option value="earliest">earliest</option>
+                          <option value="pending">pending</option>
+                          <option value="safe">safe</option>
+                          <option value="finalized">finalized</option>
+                          <option value="number">Block Number</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">The block number to read storage from. If omitted, the latest block is used.</p>
+                      </div>
+
+                      {#if storageParams.blockParam === 'number'}
+                        <div>
+                          <label class="block text-sm font-medium text-gray-700 mb-1" for="storage-block-number">
+                            Block Number
+                          </label>
+                          <input
+                            type="text"
+                            id="storage-block-number"
+                            bind:value={storageParams.customBlockNumber}
+                            placeholder="123 or 0x7b"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                          />
+                          <p class="mt-1 text-xs text-gray-500">Enter decimal number or hexadecimal with 0x prefix.</p>
+                        </div>
+                      {/if}
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={executeStorageCall}
+                      >
+                        Get Storage
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'eth_estimateGas'}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-to">
+                          To Address <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="estimate-to"
+                          bind:value={estimateGasParams.to}
+                          placeholder="0x..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The address to estimate gas for.</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-value">
+                          Value (in Wei)
+                        </label>
+                        <input
+                          type="text"
+                          id="estimate-value"
+                          bind:value={estimateGasParams.value}
+                          placeholder="0x0"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">Amount of wei to send (hex format).</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-data">
+                          Data
+                        </label>
+                        <input
+                          type="text"
+                          id="estimate-data"
+                          bind:value={estimateGasParams.data}
+                          placeholder="0x..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The data for the transaction (hex format).</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-block">
+                          Block Parameter
+                        </label>
+                        <select
+                          id="estimate-block"
+                          bind:value={estimateGasParams.blockParam}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                        >
+                          <option value="latest">latest</option>
+                          <option value="earliest">earliest</option>
+                          <option value="pending">pending</option>
+                          <option value="safe">safe</option>
+                          <option value="finalized">finalized</option>
+                          <option value="number">Block Number</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">The block to estimate gas at.</p>
+                      </div>
+
+                      {#if estimateGasParams.blockParam === 'number'}
+                        <div>
+                          <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-block-number">
+                            Block Number
+                          </label>
+                          <input
+                            type="text"
+                            id="estimate-block-number"
+                            bind:value={estimateGasParams.customBlockNumber}
+                            placeholder="123 or 0x7b"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                          />
+                          <p class="mt-1 text-xs text-gray-500">Enter decimal number or hexadecimal with 0x prefix.</p>
+                        </div>
+                      {/if}
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={executeEstimateGas}
+                      >
+                        Estimate Gas
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'eth_call'}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-to">
+                          To Address <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="call-to"
+                          bind:value={callParams.to}
+                          placeholder="0x..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The address of the contract to call.</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-data">
+                          Data
+                        </label>
+                        <input
+                          type="text"
+                          id="call-data"
+                          bind:value={callParams.data}
+                          placeholder="0x..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The encoded function call data (hex format).</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-value">
+                          Value
+                        </label>
+                        <input
+                          type="text"
+                          id="call-value"
+                          bind:value={callParams.value}
+                          placeholder="0x0"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The value in wei to send with the call (hex format).</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="call-block">
+                          Block Parameter
+                        </label>
+                        <select
+                          id="call-block"
+                          bind:value={callParams.blockNumber}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                        >
+                          <option value="latest">latest</option>
+                          <option value="earliest">earliest</option>
+                          <option value="pending">pending</option>
+                          <option value="safe">safe</option>
+                          <option value="finalized">finalized</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">The block to execute the call against.</p>
+                      </div>
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={executeCall}
+                      >
+                        Execute Call
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'eth_getBlockByHash'}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="block-hash">
+                          Block Hash <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="block-hash"
+                          bind:value={blockByHashParams.blockHash}
+                          placeholder="0x..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                      </div>
+
+                      <div class="flex items-center">
+                        <input
+                          type="checkbox"
+                          id="include-transactions"
+                          bind:checked={blockByHashParams.includeTransactions}
+                          class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        />
+                        <label class="ml-2 block text-sm text-gray-900" for="include-transactions">
+                          Include Full Transactions
+                        </label>
+                      </div>
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={executeGetBlockByHash}
+                      >
+                        Get Block
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'eth_getBlockByNumber'}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="block-number-param">
+                          Block Parameter
+                        </label>
+                        <select
+                          id="block-number-param"
+                          bind:value={blockByNumberParams.blockNumber}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                        >
+                          <option value="latest">latest</option>
+                          <option value="earliest">earliest</option>
+                          <option value="pending">pending</option>
+                          <option value="safe">safe</option>
+                          <option value="finalized">finalized</option>
+                          <option value="number">Block Number</option>
+                        </select>
+                      </div>
+
+                      {#if blockByNumberParams.blockNumber === 'number'}
+                        <div>
+                          <label class="block text-sm font-medium text-gray-700 mb-1" for="custom-block-number">
+                            Block Number <span class="text-red-600">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            id="custom-block-number"
+                            bind:value={blockByNumberParams.customBlockNumber}
+                            placeholder="123 or 0x7b"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                          />
+                          <p class="mt-1 text-xs text-gray-500">Enter decimal number or hexadecimal with 0x prefix.</p>
+                        </div>
+                      {/if}
+
+                      <div class="flex items-center">
+                        <input
+                          type="checkbox"
+                          id="include-transactions-by-number"
+                          bind:checked={blockByNumberParams.includeTransactions}
+                          class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        />
+                        <label class="ml-2 block text-sm text-gray-900" for="include-transactions-by-number">
+                          Include Full Transactions
+                        </label>
+                      </div>
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={executeGetBlockByNumber}
+                      >
+                        Get Block
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'eth_getTransactionByHash'}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="transaction-hash">
+                          Transaction Hash <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="transaction-hash"
+                          bind:value={transactionByHashParams.hash}
+                          placeholder="0x..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                      </div>
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={executeGetTransactionByHash}
+                      >
+                        Get Transaction
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'eth_getTransactionReceipt'}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="receipt-transaction-hash">
+                          Transaction Hash <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="receipt-transaction-hash"
+                          bind:value={transactionReceiptParams.hash}
+                          placeholder="0x..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                      </div>
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={executeGetTransactionReceipt}
+                      >
+                        Get Receipt
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'eth_getTransactionCount'}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="transaction-count-address">
+                          Address <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="transaction-count-address"
+                          bind:value={transactionCountParams.address}
+                          placeholder={userAddress || '0x...'}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="transaction-count-block">
+                          Block Parameter
+                        </label>
+                        <select
+                          id="transaction-count-block"
+                          bind:value={transactionCountParams.blockNumber}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                        >
+                          <option value="latest">latest</option>
+                          <option value="earliest">earliest</option>
+                          <option value="pending">pending</option>
+                          <option value="safe">safe</option>
+                          <option value="finalized">finalized</option>
+                          <option value="number">Block Number</option>
+                        </select>
+                      </div>
+
+                      {#if transactionCountParams.blockNumber === 'number'}
+                        <div>
+                          <label class="block text-sm font-medium text-gray-700 mb-1" for="transaction-count-block-number">
+                            Block Number <span class="text-red-600">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            id="transaction-count-block-number"
+                            bind:value={transactionCountParams.customBlockNumber}
+                            placeholder="123 or 0x7b"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                          />
+                          <p class="mt-1 text-xs text-gray-500">Enter decimal number or hexadecimal with 0x prefix.</p>
+                        </div>
+                      {/if}
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={executeGetTransactionCount}
+                      >
+                        Get Transaction Count
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'eth_getCode'}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="get-code-address">
+                          Contract Address <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="get-code-address"
+                          bind:value={getCodeParams.address}
+                          placeholder="0x..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The address of the smart contract to get the code from.</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="get-code-block">
+                          Block Parameter
+                        </label>
+                        <select
+                          id="get-code-block"
+                          bind:value={getCodeParams.blockNumber}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                        >
+                          <option value="latest">latest</option>
+                          <option value="earliest">earliest</option>
+                          <option value="pending">pending</option>
+                          <option value="safe">safe</option>
+                          <option value="finalized">finalized</option>
+                          <option value="number">Block Number</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">The block number to get the code from.</p>
+                      </div>
+
+                      {#if getCodeParams.blockNumber === 'number'}
+                        <div>
+                          <label class="block text-sm font-medium text-gray-700 mb-1" for="get-code-block-number">
+                            Block Number <span class="text-red-600">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            id="get-code-block-number"
+                            bind:value={getCodeParams.customBlockNumber}
+                            placeholder="123 or 0x7b"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                          />
+                          <p class="mt-1 text-xs text-gray-500">Enter decimal number or hexadecimal with 0x prefix.</p>
+                        </div>
+                      {/if}
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={executeGetCode}
+                      >
+                        Get Contract Code
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'eth_signTypedData_v4' && showSignTypedDataForm}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="sign-typed-data-address">
+                          Address <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="sign-typed-data-address"
+                          value={userAddress || ''}
+                          disabled
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-gray-50"
+                        />
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="sign-typed-data-data">
+                          Typed Data <span class="text-red-600">*</span>
+                        </label>
+                        <textarea
+                          id="sign-typed-data-data"
+                          rows="12"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono"
+                          placeholder="Enter EIP-712 TypedData JSON"
+                          value={JSON.stringify(signTypedDataParams.typedData, null, 2)}
+                          readonly
+                        ></textarea>
+                        <p class="mt-1 text-xs text-gray-500">A JSON in either string or object form that conforms to the EIP-712 TypedData JSON schema.</p>
+                      </div>
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={executeSignTypedData}
+                      >
+                        Sign Message
+                      </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'personal_sign' && showPersonalSignForm}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="personal-sign-address">
+                          Address <span class="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="personal-sign-address"
+                          bind:value={personalSignParams.fromAddress}
+                          placeholder={userAddress || '0x...'}
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">The Ethereum address that will sign the message.</p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="personal-sign-message">
+                          Message <span class="text-red-600">*</span>
+                        </label>
+                        <textarea
+                          id="personal-sign-message"
+                          bind:value={personalSignParams.message}
+                          rows="4"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono"
+                          placeholder="Enter message to sign"
+                        ></textarea>
+                        <p class="mt-1 text-xs text-gray-500">The message to sign. This message will be prefixed with "\x19Ethereum Signed Message:\n" + message.length.</p>
+                      </div>
+
+                      <button
+                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+                        on:click={executePersonalSign}
+                      >
+                        Sign Message
                       </button>
                     </div>
                   {/if}
@@ -1830,21 +2602,27 @@
                       {#if result.error}
                         <h4 class="text-sm font-medium text-red-900 mb-2">Error:</h4>
                         <p class="text-red-600 text-sm">{result.error}</p>
-                      {:else if result.request}
-                        <div>
-                          <h4 class="text-sm font-medium text-gray-900 mb-2">Request Payload:</h4>
-                          <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(result.request, null, 2)}</pre>
-                        </div>
+                      {:else}
+                        {#if result.request}
+                          <div>
+                            <h4 class="text-sm font-medium text-gray-900 mb-2">Request Payload:</h4>
+                            <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(result.request, null, 2)}</pre>
+                          </div>
+                        {/if}
 
-                        <div class="mt-4">
-                          <h4 class="text-sm font-medium text-gray-900 mb-2">Response Payload:</h4>
-                          <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(result.response, null, 2)}</pre>
-                        </div>
+                        {#if result.response}
+                          <div class="mt-4">
+                            <h4 class="text-sm font-medium text-gray-900 mb-2">Response Payload:</h4>
+                            <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(result.response, null, 2)}</pre>
+                          </div>
+                        {/if}
 
-                        <div class="mt-4">
-                          <h4 class="text-sm font-medium text-gray-900 mb-2">Formatted Result:</h4>
-                          <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{result.formatted}</pre>
-                        </div>
+                        {#if result.decoded}
+                          <div class="mt-4">
+                            <h4 class="text-sm font-medium text-gray-900 mb-2">Decoded Result:</h4>
+                            <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{result.decoded}</pre>
+                          </div>
+                        {/if}
                       {/if}
                     </div>
                   {/if}
