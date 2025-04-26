@@ -582,29 +582,15 @@
             balanceParams.address = userAddress;
           }
           
-          if (!balanceParams.address) {
-            throw new Error('Address is required');
-          }
-
-          const balanceBlockParam = getBlockParameter(balanceParams.blockParam, balanceParams.customBlockNumber);
-          const requestPayload = { 
-            method: 'eth_getBalance',
-            params: [
-              balanceParams.address,
-              balanceBlockParam
-            ]
-          };
-          const balance = await passportProvider.request(requestPayload);
-          const balanceInEther = ethers.formatEther(balance);
           result = {
             method: 'eth_getBalance',
             description: "Returns the balance of the account of given address in wei.",
-            request: requestPayload,
-            response: balance,
-            formatted: `${balanceInEther} tIMX (${balance} Wei)`
+            request: null,
+            response: null,
+            formatted: null
           };
           addToDisplayOrder('eth_getBalance');
-          break;
+          return;
 
         case 'eth_getTransactionCount':
           addToDisplayOrder('eth_getTransactionCount');
@@ -1782,7 +1768,7 @@
                     <div class="space-y-4">
                       <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="balance-address">
-                          Address
+                          Address <span class="text-red-600">*</span>
                         </label>
                         <input
                           type="text"
@@ -1791,6 +1777,7 @@
                           placeholder={userAddress || '0x...'}
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                         />
+                        <p class="mt-1 text-xs text-gray-500">The address to check balance for.</p>
                       </div>
 
                       <div>
@@ -1809,6 +1796,7 @@
                           <option value="finalized">finalized</option>
                           <option value="number">Block Number</option>
                         </select>
+                        <p class="mt-1 text-xs text-gray-500">The block number to check balance at.</p>
                       </div>
 
                       {#if balanceParams.blockParam === 'number'}
@@ -1823,6 +1811,7 @@
                             placeholder="123 or 0x7b"
                             class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                           />
+                          <p class="mt-1 text-xs text-gray-500">Enter decimal number or hexadecimal with 0x prefix.</p>
                         </div>
                       {/if}
 
