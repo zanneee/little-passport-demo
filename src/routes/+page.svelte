@@ -4,6 +4,9 @@
   import { jwtDecode } from 'jwt-decode';
   import { BrowserProvider, Contract, ethers } from 'ethers';
   import type { Eip1193Provider } from 'ethers';
+  import { NETWORK_CONFIG, ERROR_MESSAGES, DEFAULT_TRANSACTION } from '../constants/network';
+  import type { UserProfile, TokenState, TransactionState, PassportProvider, Transaction, BlockTransaction } from '../types';
+  import { setResult, setError, resetDisplayOrder } from '../utils/helpers';
 
   // Types
   interface UserProfile {
@@ -60,19 +63,6 @@
     s: string;
   }
 
-  // Constants
-  const DEFAULT_TRANSACTION = {
-    to: '0xacbe301e5b46f4dd532b74e209adac0c06d42f8c',
-    value: '1000000000000000'
-  };
-
-  const ERROR_MESSAGES = {
-    NOT_LOGGED_IN: 'User must be logged in to perform this action',
-    UNAUTHORIZED: 'Unauthorized - Please connect your wallet first',
-    INVALID_PARAMS: 'Invalid parameters - "to" field is required',
-    TRANSACTION_FAILED: 'Transaction failed'
-  };
-
   // State
   let passportInstance: passport.Passport;
   let passportProvider: PassportProvider;
@@ -110,20 +100,121 @@
     sending: false
   };
 
-  let transactionParams = {
-    to: '',
-    value: '',
-    data: '',
-    gasLimit: '',
-    maxFeePerGas: '',
-    maxPriorityFeePerGas: ''
+  // 1. signTypedDataParams, personalSignParams를 먼저 선언
+  let signTypedDataParams = {
+    typedData: {
+      domain: {
+        name: 'Ether Mail',
+        version: '1',
+        chainId: 13473,
+        verifyingContract: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826'
+      },
+      message: {
+        from: {
+          name: 'Cow',
+          wallet: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826'
+        },
+        to: {
+          name: 'Bob',
+          wallet: '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB'
+        },
+        contents: 'Hello, Bob!'
+      },
+      primaryType: 'Mail',
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' }
+        ],
+        Person: [
+          { name: 'name', type: 'string' },
+          { name: 'wallet', type: 'address' }
+        ],
+        Mail: [
+          { name: 'from', type: 'Person' },
+          { name: 'to', type: 'Person' },
+          { name: 'contents', type: 'string' }
+        ]
+      }
+    }
   };
 
-  let storageParams = {
-    address: '',
-    slot: '0x0',
-    blockParam: 'latest',
-    customBlockNumber: ''
+  let personalSignParams = {
+    message: 'Hello, Immutable zkEVM',
+    fromAddress: ''
+  };
+
+  // 2. 그 다음에 params 객체 선언
+  let params = {
+    transaction: {
+      to: '',
+      value: '',
+      data: '',
+      gasLimit: '',
+      maxFeePerGas: '',
+      maxPriorityFeePerGas: ''
+    },
+    storage: {
+      address: '',
+      slot: '0x0',
+      blockParam: 'latest',
+      customBlockNumber: ''
+    },
+    estimateGas: {
+      to: '',
+      data: '0x',
+      value: '0x0',
+      blockParam: 'latest',
+      customBlockNumber: ''
+    },
+    call: {
+      to: '',
+      data: '0x',
+      value: '0x0',
+      blockNumber: 'latest'
+    },
+    blockByHash: {
+      blockHash: '',
+      includeTransactions: false
+    },
+    blockByNumber: {
+      blockNumber: 'latest',
+      includeTransactions: false,
+      customBlockNumber: ''
+    },
+    transactionByHash: {
+      hash: ''
+    },
+    transactionCount: {
+      address: '',
+      blockNumber: 'latest',
+      customBlockNumber: ''
+    },
+    getCode: {
+      address: '',
+      blockNumber: 'latest',
+      customBlockNumber: ''
+    },
+    signTypedData: signTypedDataParams,
+    personalSign: personalSignParams,
+    balance: {
+      address: '',
+      blockParam: 'latest',
+      customBlockNumber: ''
+    },
+    transactionReceipt: {
+      hash: ''
+    }
+  };
+
+  let formVisibility = {
+    transaction: false,
+    blockByHash: false,
+    transactionByHash: false,
+    signTypedData: false,
+    personalSign: false
   };
 
   let estimateGasParams = {
@@ -168,51 +259,6 @@
     customBlockNumber: ''
   };
 
-  let signTypedDataParams = {
-    typedData: {
-      domain: {
-        name: 'Ether Mail',
-        version: '1',
-        chainId: 13473,  // Immutable zkEVM testnet chainId
-        verifyingContract: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826'
-      },
-      message: {
-        from: {
-          name: 'Cow',
-          wallet: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826'
-        },
-        to: {
-          name: 'Bob',
-          wallet: '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB'
-        },
-        contents: 'Hello, Bob!'
-      },
-      primaryType: 'Mail',
-      types: {
-        EIP712Domain: [
-          { name: 'name', type: 'string' },
-          { name: 'version', type: 'string' },
-          { name: 'chainId', type: 'uint256' },
-          { name: 'verifyingContract', type: 'address' }
-        ],
-        Person: [
-          { name: 'name', type: 'string' },
-          { name: 'wallet', type: 'address' }
-        ],
-        Mail: [
-          { name: 'from', type: 'Person' },
-          { name: 'to', type: 'Person' },
-          { name: 'contents', type: 'string' }
-        ]
-      }
-    }
-  };
-
-  let personalSignParams = {
-    message: 'Hello, Immutable zkEVM',
-    fromAddress: ''  // Add signer address field
-  };
-
   let balanceParams = {
     address: '',
     blockParam: 'latest',
@@ -223,21 +269,7 @@
     hash: ''
   };
 
-  // 네트워크 설정
-  const NETWORK_CONFIG = {
-    testnet: {
-      name: 'Testnet',
-      chainId: 13473,
-      explorerUrl: 'https://explorer.testnet.immutable.com'
-    },
-    mainnet: {
-      name: 'Mainnet',
-      chainId: 13371,
-      explorerUrl: 'https://explorer.immutable.com'
-    }
-  };
-
-  // chainId 업데이트 함수
+  // Update chainId function
   function updateChainId() {
     if (signTypedDataParams?.typedData?.domain) {
       signTypedDataParams.typedData.domain.chainId = NETWORK_CONFIG[currentNetwork].chainId;
@@ -401,11 +433,11 @@
 
   function addToDisplayOrder(type: string) {
     // Reset form visibility flags except for the current form
-    showTransactionForm = type === 'sendTransaction';
-    showBlockByHashForm = type === 'blockByHash';
-    showTransactionByHashForm = type === 'transactionByHash';
-    showSignTypedDataForm = type === 'signTypedData';
-    showPersonalSignForm = type === 'personalSign';
+    formVisibility.transaction = type === 'sendTransaction';
+    formVisibility.blockByHash = type === 'blockByHash';
+    formVisibility.transactionByHash = type === 'transactionByHash';
+    formVisibility.signTypedData = type === 'signTypedData';
+    formVisibility.personalSign = type === 'personalSign';
     
     // Add new type to displayOrder if it doesn't exist
     if (!displayOrder.includes(type)) {
@@ -415,7 +447,6 @@
 
   async function handleGetIdToken() {
     try {
-      // 다른 토큰 상태 초기화
       tokenState.accessToken = null;
       tokenState.decodedAccessToken = null;
       displayOrder = [];
@@ -436,7 +467,6 @@
 
   async function handleGetAccessToken() {
     try {
-      // 다른 토큰 상태 초기화
       tokenState.idToken = null;
       tokenState.decodedIdToken = null;
       displayOrder = [];
@@ -457,7 +487,6 @@
 
   async function handleGetUserInfo() {
     try {
-      // 이전 결과 초기화
       linkedAddresses = null;
       displayOrder = [];
 
@@ -478,7 +507,6 @@
 
   async function handleGetLinkedAddresses() {
     try {
-      // 이전 결과 초기화
       userInfo = null;
       displayOrder = [];
 
@@ -538,7 +566,7 @@
       if (!customNumber) {
         throw new Error('Block number is required when "Block number" is selected');
       }
-      // 16진수 또는 10진수 입력 처리
+      // Hexadecimal or decimal input processing
       if (customNumber.startsWith('0x')) {
         blockParameter = customNumber;
       } else if (/^\d+$/.test(customNumber)) {
@@ -552,14 +580,14 @@
 
   async function executeStorageCall() {
     console.log('Executing storage lookup');
-    console.log('Storage params:', storageParams);
+    console.log('Storage params:', params.storage);
 
     try {
-      if (!storageParams.address) {
+      if (!params.storage.address) {
         throw new Error('Address is required');
       }
 
-      if (!storageParams.slot) {
+      if (!params.storage.slot) {
         throw new Error('Storage slot is required');
       }
 
@@ -567,12 +595,12 @@
         throw new Error('Provider not initialized');
       }
 
-      const blockParam = getBlockParameter(storageParams.blockParam, storageParams.customBlockNumber);
+      const blockParam = getBlockParameter(params.storage.blockParam, params.storage.customBlockNumber);
       const requestPayload = {
         method: 'eth_getStorageAt',
         params: [
-          storageParams.address,
-          storageParams.slot,
+          params.storage.address,
+          params.storage.slot,
           blockParam
         ]
       };
@@ -586,7 +614,7 @@
         description: "Returns the value from a storage position at a given address.",
         request: requestPayload,
         response: storageValue,
-        formatted: `Storage Value at slot ${storageParams.slot}: ${storageValue}`
+        formatted: `Storage Value at slot ${params.storage.slot}: ${storageValue}`
       };
       displayOrder = ['eth_getStorageAt'];
     } catch (error: any) {
@@ -602,10 +630,10 @@
 
   async function executeEstimateGas() {
     console.log('Executing gas estimation');
-    console.log('Estimate gas params:', estimateGasParams);
+    console.log('Estimate gas params:', params.estimateGas);
 
     try {
-      if (!estimateGasParams.to) {
+      if (!params.estimateGas.to) {
         throw new Error('To address is required');
       }
 
@@ -613,14 +641,14 @@
         throw new Error('Provider not initialized');
       }
 
-      const blockParam = getBlockParameter(estimateGasParams.blockParam, estimateGasParams.customBlockNumber);
+      const blockParam = getBlockParameter(params.estimateGas.blockParam, params.estimateGas.customBlockNumber);
       const requestPayload = {
         method: 'eth_estimateGas',
         params: [{
-          to: estimateGasParams.to,
+          to: params.estimateGas.to,
           from: userAddress || undefined,
-          value: estimateGasParams.value || '0x0',
-          data: estimateGasParams.data || '0x'
+          value: params.estimateGas.value || '0x0',
+          data: params.estimateGas.data || '0x'
         }, blockParam]
       };
 
@@ -649,56 +677,56 @@
 
   async function executeGetBalance() {
     console.log('Executing balance check');
-    console.log('Balance params:', balanceParams);
+    console.log('Balance params:', params.balance);
 
     try {
-      if (!balanceParams.address) {
+      if (!params.balance.address) {
         throw new Error('Address is required');
       }
-
       if (!passportProvider) {
         throw new Error('Provider not initialized');
       }
-
-      const balanceBlockParam = getBlockParameter(balanceParams.blockParam, balanceParams.customBlockNumber);
+      const balanceBlockParam = getBlockParameter(params.balance.blockParam, params.balance.customBlockNumber);
       const requestPayload = { 
         method: 'eth_getBalance',
         params: [
-          balanceParams.address,
+          params.balance.address,
           balanceBlockParam
         ]
       };
-      
       console.log('Requesting balance with payload:', requestPayload);
       const balance = await passportProvider.request(requestPayload);
       console.log('Balance response:', balance);
-      
       const balanceInEther = ethers.formatEther(balance);
-      result = {
-        method: 'eth_getBalance',
-        description: "Returns the balance of the account of given address in wei.",
-        request: requestPayload,
-        response: balance,
-        formatted: `${balanceInEther} tIMX (${balance} Wei)`
-      };
-      displayOrder = ['eth_getBalance'];
+      setResult(
+        (v) => result = v,
+        {
+          method: 'eth_getBalance',
+          description: "Returns the balance of the account of given address in wei.",
+          request: requestPayload,
+          response: balance,
+          formatted: `${balanceInEther} tIMX (${balance} Wei)`
+        },
+        'eth_getBalance',
+        (v) => displayOrder = v
+      );
     } catch (error: any) {
-      console.error('Error getting balance:', error);
-      result = {
-        method: 'eth_getBalance',
-        description: "Returns the balance of the account of given address in wei.",
-        error: error.message || 'Failed to get balance'
-      };
-      displayOrder = ['eth_getBalance'];
+      setError(
+        (v) => result = v,
+        error,
+        'eth_getBalance',
+        (v) => displayOrder = v,
+        "Returns the balance of the account of given address in wei."
+      );
     }
   }
 
   async function executeCall() {
     console.log('Executing contract call');
-    console.log('Call params:', callParams);
+    console.log('Call params:', params.call);
 
     try {
-      if (!callParams.to) {
+      if (!params.call.to) {
         throw new Error('To address is required');
       }
 
@@ -706,25 +734,24 @@
         throw new Error('Provider not initialized');
       }
 
-      // 트랜잭션 객체 구성
+      // Transaction object configuration
       const transaction: any = {
-        to: callParams.to
+        to: params.call.to
       };
 
-      // 선택적 필드들은 값이 있을 때만 추가
-      if (callParams.data && callParams.data.trim() !== '') {
-        transaction.data = callParams.data;
+      if (params.call.data && params.call.data.trim() !== '') {
+        transaction.data = params.call.data;
       }
 
-      if (callParams.value && callParams.value.trim() !== '') {
-        transaction.value = callParams.value;
+      if (params.call.value && params.call.value.trim() !== '') {
+        transaction.value = params.call.value;
       }
 
       const requestPayload = {
         method: 'eth_call',
         params: [
           transaction,
-          callParams.blockNumber
+          params.call.blockNumber
         ]
       };
 
@@ -752,10 +779,10 @@
 
   async function executeGetBlockByHash() {
     console.log('Executing get block by hash');
-    console.log('Block by hash params:', blockByHashParams);
+    console.log('Block by hash params:', params.blockByHash);
 
     try {
-      if (!blockByHashParams.blockHash) {
+      if (!params.blockByHash.blockHash) {
         throw new Error('Block hash is required');
       }
 
@@ -766,8 +793,8 @@
       const requestPayload = {
         method: 'eth_getBlockByHash',
         params: [
-          blockByHashParams.blockHash,
-          blockByHashParams.includeTransactions
+          params.blockByHash.blockHash,
+          params.blockByHash.includeTransactions
         ]
       };
 
@@ -795,23 +822,23 @@
 
   async function executeGetBlockByNumber() {
     console.log('Executing get block by number');
-    console.log('Block by number params:', blockByNumberParams);
+    console.log('Block by number params:', params.blockByNumber);
 
     try {
       if (!passportProvider) {
         throw new Error('Provider not initialized');
       }
 
-      let blockParameter = blockByNumberParams.blockNumber;
+      let blockParameter = params.blockByNumber.blockNumber;
       if (blockParameter === 'number') {
-        if (!blockByNumberParams.customBlockNumber) {
+        if (!params.blockByNumber.customBlockNumber) {
           throw new Error('Block number is required when "Block number" is selected');
         }
         // Handle both hex and decimal input
-        if (blockByNumberParams.customBlockNumber.startsWith('0x')) {
-          blockParameter = blockByNumberParams.customBlockNumber;
-        } else if (/^\d+$/.test(blockByNumberParams.customBlockNumber)) {
-          blockParameter = '0x' + Number(blockByNumberParams.customBlockNumber).toString(16);
+        if (params.blockByNumber.customBlockNumber.startsWith('0x')) {
+          blockParameter = params.blockByNumber.customBlockNumber;
+        } else if (/^\d+$/.test(params.blockByNumber.customBlockNumber)) {
+          blockParameter = '0x' + Number(params.blockByNumber.customBlockNumber).toString(16);
         } else {
           throw new Error('Invalid block number format. Use decimal or hex (0x) format');
         }
@@ -821,7 +848,7 @@
         method: 'eth_getBlockByNumber',
         params: [
           blockParameter,
-          blockByNumberParams.includeTransactions
+          params.blockByNumber.includeTransactions
         ]
       };
 
@@ -857,14 +884,14 @@ Transactions: ${formatTransactions(response.transactions)}` : 'Block not found'
 
   async function executeGetTransactionByHash() {
     console.log('Executing get transaction by hash');
-    console.log('Transaction by hash params:', transactionByHashParams);
+    console.log('Transaction by hash params:', params.transactionByHash);
 
     try {
-      if (!transactionByHashParams.hash) {
+      if (!params.transactionByHash.hash) {
         throw new Error('Transaction hash is required');
       }
 
-      if (!transactionByHashParams.hash.startsWith('0x')) {
+      if (!params.transactionByHash.hash.startsWith('0x')) {
         throw new Error('Transaction hash must start with 0x');
       }
 
@@ -874,7 +901,7 @@ Transactions: ${formatTransactions(response.transactions)}` : 'Block not found'
 
       const requestPayload = {
         method: 'eth_getTransactionByHash',
-        params: [transactionByHashParams.hash]
+        params: [params.transactionByHash.hash]
       };
 
       console.log('Getting transaction with payload:', requestPayload);
@@ -925,16 +952,16 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
 
   async function handleRpcCall(method: string) {
     try {
-      // 새로운 RPC 호출시 이전 결과 초기화
+      // When a new RPC call is made, initialize previous results
       displayOrder = [];
       result = null;
 
-      // 폼 표시 상태 초기화
-      showTransactionForm = false;
-      showBlockByHashForm = false;
-      showTransactionByHashForm = false;
-      showSignTypedDataForm = false;
-      showPersonalSignForm = false;
+      // Initialize form display states
+      formVisibility.transaction = false;
+      formVisibility.blockByHash = false;
+      formVisibility.transactionByHash = false;
+      formVisibility.signTypedData = false;
+      formVisibility.personalSign = false;
 
       switch (method) {
         case 'eth_requestAccounts':
@@ -1025,8 +1052,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_getBalance':
-          // 메뉴 클릭 시에는 폼만 표시
-          balanceParams = {
+          params.balance = {
             address: userAddress || '',
             blockParam: 'latest',
             customBlockNumber: ''
@@ -1046,8 +1072,8 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
             await handleLogin();
           }
           
-          showTransactionForm = true;
-          transactionParams = {
+          formVisibility.transaction = true;
+          params.transaction = {
             to: DEFAULT_TRANSACTION.to,
             value: DEFAULT_TRANSACTION.value,
             data: '',
@@ -1066,8 +1092,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_getTransactionCount':
-          // 메뉴 클릭 시에는 폼만 표시
-          transactionCountParams = {
+          params.transactionCount = {
             address: userAddress || '',
             blockNumber: 'latest',
             customBlockNumber: ''
@@ -1082,8 +1107,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_getStorageAt':
-          // 메뉴 클릭 시에는 폼만 표시
-          storageParams = {
+          params.storage = {
             address: userAddress || '',
             slot: '0x0',
             blockParam: 'latest',
@@ -1100,9 +1124,8 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_estimateGas':
-          // 메뉴 클릭 시에는 폼만 표시
-          estimateGasParams = {
-            to: userAddress || '',  // 현재 로그인된 주소를 기본값으로 설정
+          params.estimateGas = {
+            to: userAddress || '',  
             data: '0x',
             value: '0x0',
             blockParam: 'latest',
@@ -1119,8 +1142,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_call':
-          // 메뉴 클릭 시에는 폼만 표시
-          callParams = {
+          params.call = {
             to: '',
             data: '0x',
             value: '0x0',
@@ -1136,8 +1158,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_getBlockByHash':
-          // 메뉴 클릭 시에는 폼만 표시
-          blockByHashParams = {
+          params.blockByHash = {
             blockHash: '',
             includeTransactions: false
           };
@@ -1151,8 +1172,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_getBlockByNumber':
-          // 메뉴 클릭 시에는 폼만 표시
-          blockByNumberParams = {
+          params.blockByNumber = {
             blockNumber: 'latest',
             includeTransactions: false,
             customBlockNumber: ''
@@ -1167,8 +1187,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_getTransactionByHash':
-          // 메뉴 클릭 시에는 폼만 표시
-          transactionByHashParams = {
+          params.transactionByHash = {
             hash: ''
           };
           result = {
@@ -1181,8 +1200,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_getTransactionReceipt':
-          // 메뉴 클릭 시에는 폼만 표시
-          transactionReceiptParams = {
+          params.transactionReceipt = {
             hash: ''
           };
           result = {
@@ -1195,8 +1213,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_getTransactionCount':
-          // 메뉴 클릭 시에는 폼만 표시
-          transactionCountParams = {
+          params.transactionCount = {
             address: userAddress || '',
             blockNumber: 'latest',
             customBlockNumber: ''
@@ -1211,8 +1228,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_getCode':
-          // 메뉴 클릭 시에는 폼만 표시
-          getCodeParams = {
+          params.getCode = {
             address: userAddress || '',
             blockNumber: 'latest',
             customBlockNumber: ''
@@ -1227,8 +1243,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'eth_signTypedData_v4':
-          // 메뉴 클릭 시에는 폼만 표시
-          showSignTypedDataForm = true;
+          formVisibility.signTypedData = true;
           signTypedDataParams.typedData.domain.chainId = NETWORK_CONFIG[currentNetwork].chainId;
           signTypedDataParams.typedData.message.from.wallet = userAddress || '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826';
           result = {
@@ -1241,8 +1256,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           break;
 
         case 'personal_sign':
-          // 메뉴 클릭 시에는 폼만 표시
-          showPersonalSignForm = true;
+          formVisibility.personalSign = true;
           personalSignParams = {
             message: 'Hello, Immutable zkEVM',
             fromAddress: userAddress || ''
@@ -1276,13 +1290,13 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
         throw new Error('Signer not initialized');
       }
 
-      const value = transactionParams.value || DEFAULT_TRANSACTION.value;
+      const value = params.transaction.value || DEFAULT_TRANSACTION.value;
       const hexValue = `0x${BigInt(value).toString(16)}`;
 
       const tx = {
-        to: transactionParams.to || DEFAULT_TRANSACTION.to,
+        to: params.transaction.to || DEFAULT_TRANSACTION.to,
         value: hexValue,
-        data: transactionParams.data || '0x'
+        data: params.transaction.data || '0x'
       };
       
       result = {
@@ -1347,11 +1361,9 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
     if (transactions.length === 0) return 'No transactions in this block';
 
     if (typeof transactions[0] === 'string') {
-      // 트랜잭션 해시만 있는 경우
       return `${transactions.length} transactions\n` +
         transactions.map((hash: string) => `  - ${hash}`).join('\n');
     } else {
-      // 전체 트랜잭션 객체가 있는 경우
       return `${transactions.length} transactions\n` +
         transactions.map((tx: BlockTransaction) => {
           const valueInIMX = tx.value ? (BigInt(tx.value) / BigInt(1e18)).toString() : '0';
@@ -1371,14 +1383,14 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
   }
 
   function getSolidityVersion(bytecode: string): string {
-    // CBOR 인코딩된 메타데이터를 찾기 위해 마지막 부분 확인
+    // CBOR encoded metadata to find the last part
     const match = bytecode.match(/a264697066735822/);
     if (!match || match.index === undefined) return 'Unknown';
     
     const versionMatch = bytecode.slice(match.index - 100, match.index).match(/736f6c6343(.{8})/);
     if (versionMatch) {
       const version = versionMatch[1];
-      // 16진수를 버전 문자열로 변환
+      // Convert hexadecimal to version string
       const major = parseInt(version.slice(0, 2), 16);
       const minor = parseInt(version.slice(2, 4), 16);
       const patch = parseInt(version.slice(4, 6), 16);
@@ -1389,14 +1401,14 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
 
   async function executeGetTransactionReceipt() {
     console.log('Executing get transaction receipt');
-    console.log('Transaction receipt params:', transactionReceiptParams);
+    console.log('Transaction receipt params:', params.transactionReceipt);
 
     try {
-      if (!transactionReceiptParams.hash) {
+      if (!params.transactionReceipt.hash) {
         throw new Error('Transaction hash is required');
       }
 
-      if (!transactionReceiptParams.hash.startsWith('0x')) {
+      if (!params.transactionReceipt.hash.startsWith('0x')) {
         throw new Error('Transaction hash must start with 0x');
       }
 
@@ -1406,7 +1418,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
 
       const requestPayload = {
         method: 'eth_getTransactionReceipt',
-        params: [transactionReceiptParams.hash]
+        params: [params.transactionReceipt.hash]
       };
 
       console.log('Getting transaction receipt with payload:', requestPayload);
@@ -1471,10 +1483,10 @@ Transaction Index: ${parseInt(response.transactionIndex, 16)}${logs}`
 
   async function executeGetTransactionCount() {
     console.log('Executing get transaction count');
-    console.log('Transaction count params:', transactionCountParams);
+    console.log('Transaction count params:', params.transactionCount);
 
     try {
-      const address = transactionCountParams.address || userAddress;
+      const address = params.transactionCount.address || userAddress;
       if (!address) {
         throw new Error('Address is required');
       }
@@ -1482,16 +1494,16 @@ Transaction Index: ${parseInt(response.transactionIndex, 16)}${logs}`
         throw new Error('Valid address starting with 0x is required');
       }
 
-      let blockParameter = transactionCountParams.blockNumber;
+      let blockParameter = params.transactionCount.blockNumber;
       if (blockParameter === 'number') {
-        if (!transactionCountParams.customBlockNumber) {
+        if (!params.transactionCount.customBlockNumber) {
           throw new Error('Block number is required when "Block number" is selected');
         }
         // Handle both hex and decimal input
-        if (transactionCountParams.customBlockNumber.startsWith('0x')) {
-          blockParameter = transactionCountParams.customBlockNumber;
-        } else if (/^\d+$/.test(transactionCountParams.customBlockNumber)) {
-          blockParameter = '0x' + Number(transactionCountParams.customBlockNumber).toString(16);
+        if (params.transactionCount.customBlockNumber.startsWith('0x')) {
+          blockParameter = params.transactionCount.customBlockNumber;
+        } else if (/^\d+$/.test(params.transactionCount.customBlockNumber)) {
+          blockParameter = '0x' + Number(params.transactionCount.customBlockNumber).toString(16);
         } else {
           throw new Error('Invalid block number format. Use decimal or hex (0x) format');
         }
@@ -1527,14 +1539,14 @@ Transaction Index: ${parseInt(response.transactionIndex, 16)}${logs}`
 
   async function executeGetCode() {
     console.log('Executing get code');
-    console.log('Get code params:', getCodeParams);
+    console.log('Get code params:', params.getCode);
 
     try {
-      if (!getCodeParams.address) {
+      if (!params.getCode.address) {
         throw new Error('Address is required');
       }
 
-      if (!getCodeParams.address.startsWith('0x')) {
+      if (!params.getCode.address.startsWith('0x')) {
         throw new Error('Valid address starting with 0x is required');
       }
 
@@ -1542,16 +1554,16 @@ Transaction Index: ${parseInt(response.transactionIndex, 16)}${logs}`
         throw new Error('Provider not initialized');
       }
 
-      let blockParameter = getCodeParams.blockNumber;
+      let blockParameter = params.getCode.blockNumber;
       if (blockParameter === 'number') {
-        if (!getCodeParams.customBlockNumber) {
+        if (!params.getCode.customBlockNumber) {
           throw new Error('Block number is required when "Block number" is selected');
         }
         // Handle both hex and decimal input
-        if (getCodeParams.customBlockNumber.startsWith('0x')) {
-          blockParameter = getCodeParams.customBlockNumber;
-        } else if (/^\d+$/.test(getCodeParams.customBlockNumber)) {
-          blockParameter = '0x' + Number(getCodeParams.customBlockNumber).toString(16);
+        if (params.getCode.customBlockNumber.startsWith('0x')) {
+          blockParameter = params.getCode.customBlockNumber;
+        } else if (/^\d+$/.test(params.getCode.customBlockNumber)) {
+          blockParameter = '0x' + Number(params.getCode.customBlockNumber).toString(16);
         } else {
           throw new Error('Invalid block number format. Use decimal or hex (0x) format');
         }
@@ -1559,7 +1571,7 @@ Transaction Index: ${parseInt(response.transactionIndex, 16)}${logs}`
 
       const requestPayload = {
         method: 'eth_getCode',
-        params: [getCodeParams.address, blockParameter]
+        params: [params.getCode.address, blockParameter]
       };
 
       console.log('Getting code with payload:', requestPayload);
@@ -1981,7 +1993,7 @@ Message:
                     </div>
                   {/if}
 
-                  {#if type === 'eth_sendTransaction' && showTransactionForm}
+                  {#if type === 'eth_sendTransaction' && formVisibility.transaction}
                     <div class="space-y-4 mb-4">
                       <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="tx-to">
@@ -1990,7 +2002,7 @@ Message:
                         <input
                           type="text"
                           id="tx-to"
-                          bind:value={transactionParams.to}
+                          bind:value={params.transaction.to}
                           placeholder="0x..."
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                         />
@@ -2004,7 +2016,7 @@ Message:
                         <input
                           type="text"
                           id="tx-value"
-                          bind:value={transactionParams.value}
+                          bind:value={params.transaction.value}
                           placeholder="1000000000000000"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                         />
@@ -2018,7 +2030,7 @@ Message:
                         <input
                           type="text"
                           id="tx-data"
-                          bind:value={transactionParams.data}
+                          bind:value={params.transaction.data}
                           placeholder="0x..."
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                         />
@@ -2032,7 +2044,7 @@ Message:
                         <input
                           type="text"
                           id="tx-gas-limit"
-                          bind:value={transactionParams.gasLimit}
+                          bind:value={params.transaction.gasLimit}
                           placeholder="21000"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                         />
@@ -2057,7 +2069,7 @@ Message:
                         <input
                           type="text"
                           id="storage-address"
-                          bind:value={storageParams.address}
+                          bind:value={params.storage.address}
                           placeholder={userAddress || '0x...'}
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                         />
@@ -2071,7 +2083,7 @@ Message:
                         <input
                           type="text"
                           id="storage-slot"
-                          bind:value={storageParams.slot}
+                          bind:value={params.storage.slot}
                           placeholder="0x0"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                         />
@@ -2084,7 +2096,7 @@ Message:
                         </label>
                         <select
                           id="storage-block"
-                          bind:value={storageParams.blockParam}
+                          bind:value={params.storage.blockParam}
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
                         >
                           <option value="latest">latest</option>
@@ -2097,7 +2109,7 @@ Message:
                         <p class="mt-1 text-xs text-gray-500">The block number to read storage from. If omitted, the latest block is used.</p>
                       </div>
 
-                      {#if storageParams.blockParam === 'number'}
+                      {#if params.storage.blockParam === 'number'}
                         <div>
                           <label class="block text-sm font-medium text-gray-700 mb-1" for="storage-block-number">
                             Block Number
@@ -2105,7 +2117,7 @@ Message:
                           <input
                             type="text"
                             id="storage-block-number"
-                            bind:value={storageParams.customBlockNumber}
+                            bind:value={params.storage.customBlockNumber}
                             placeholder="123 or 0x7b"
                             class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                           />
@@ -2540,7 +2552,7 @@ Message:
                     </div>
                   {/if}
 
-                  {#if type === 'eth_signTypedData_v4' && showSignTypedDataForm}
+                  {#if type === 'eth_signTypedData_v4' && formVisibility.signTypedData}
                     <div class="space-y-4 mb-4">
                       <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="sign-typed-data-address">
@@ -2579,7 +2591,7 @@ Message:
                     </div>
                   {/if}
 
-                  {#if type === 'personal_sign' && showPersonalSignForm}
+                  {#if type === 'personal_sign' && formVisibility.personalSign}
                     <div class="space-y-4 mb-4">
                       <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="personal-sign-address">
