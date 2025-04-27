@@ -7,6 +7,10 @@
   import { NETWORK_CONFIG, ERROR_MESSAGES, DEFAULT_TRANSACTION } from '../constants/network';
   import type { UserProfile, TokenState, TransactionState, PassportProvider, Transaction, BlockTransaction } from '../types';
   import { setResult, setError, resetDisplayOrder } from '../utils/helpers';
+  import SignTypedDataForm from '../components/SignTypedDataForm.svelte';
+  import InputField from '../components/InputField.svelte';
+  import ResultPanel from '../components/ResultPanel.svelte';
+  import AddressList from '../components/AddressList.svelte';
 
   // Types
   interface UserProfile {
@@ -340,7 +344,6 @@
   }
 
   onMount(() => {
-    // Check if environment variables are set
     if (!import.meta.env.VITE_IMMUTABLE_CLIENT_ID || 
         !import.meta.env.VITE_IMMUTABLE_PUBLISHABLE_KEY ||
         !import.meta.env.VITE_IMMUTABLE_ENVIRONMENT ||
@@ -349,11 +352,9 @@
       console.error('Environment variables are not set. Please check .env file.');
       return;
     }
-
     const environment = import.meta.env.VITE_IMMUTABLE_ENVIRONMENT === 'PRODUCTION' 
       ? config.Environment.PRODUCTION 
       : config.Environment.SANDBOX;
-
     passportInstance = new passport.Passport({
       baseConfig: {
         environment,
@@ -365,7 +366,6 @@
       audience: 'platform_api',
       scope: 'openid offline_access email transact',
     });
-
     initializeProviders();
   });
 
@@ -579,22 +579,16 @@
   }
 
   async function executeStorageCall() {
-    console.log('Executing storage lookup');
-    console.log('Storage params:', params.storage);
-
     try {
       if (!params.storage.address) {
         throw new Error('Address is required');
       }
-
       if (!params.storage.slot) {
         throw new Error('Storage slot is required');
       }
-
       if (!passportProvider) {
         throw new Error('Provider not initialized');
       }
-
       const blockParam = getBlockParameter(params.storage.blockParam, params.storage.customBlockNumber);
       const requestPayload = {
         method: 'eth_getStorageAt',
@@ -604,11 +598,7 @@
           blockParam
         ]
       };
-
-      console.log('Getting storage with payload:', requestPayload);
       const storageValue = await passportProvider.request(requestPayload);
-      console.log('Storage response:', storageValue);
-
       result = {
         method: 'eth_getStorageAt',
         description: "Returns the value from a storage position at a given address.",
@@ -618,7 +608,6 @@
       };
       displayOrder = ['eth_getStorageAt'];
     } catch (error: any) {
-      console.error('Error getting storage:', error);
       result = {
         method: 'eth_getStorageAt',
         description: "Returns the value from a storage position at a given address.",
@@ -629,18 +618,13 @@
   }
 
   async function executeEstimateGas() {
-    console.log('Executing gas estimation');
-    console.log('Estimate gas params:', params.estimateGas);
-
     try {
       if (!params.estimateGas.to) {
         throw new Error('To address is required');
       }
-
       if (!passportProvider) {
         throw new Error('Provider not initialized');
       }
-
       const blockParam = getBlockParameter(params.estimateGas.blockParam, params.estimateGas.customBlockNumber);
       const requestPayload = {
         method: 'eth_estimateGas',
@@ -651,11 +635,7 @@
           data: params.estimateGas.data || '0x'
         }, blockParam]
       };
-
-      console.log('Estimating gas with payload:', requestPayload);
       const gasEstimate = await passportProvider.request(requestPayload);
-      console.log('Gas estimate response:', gasEstimate);
-
       result = {
         method: 'eth_estimateGas',
         description: "Generates and returns an estimate of how much gas is necessary to allow the transaction to complete.",
@@ -665,7 +645,6 @@
       };
       displayOrder = ['eth_estimateGas'];
     } catch (error: any) {
-      console.error('Error estimating gas:', error);
       result = {
         method: 'eth_estimateGas',
         description: "Generates and returns an estimate of how much gas is necessary to allow the transaction to complete.",
@@ -676,9 +655,6 @@
   }
 
   async function executeGetBalance() {
-    console.log('Executing balance check');
-    console.log('Balance params:', params.balance);
-
     try {
       if (!params.balance.address) {
         throw new Error('Address is required');
@@ -694,9 +670,7 @@
           balanceBlockParam
         ]
       };
-      console.log('Requesting balance with payload:', requestPayload);
       const balance = await passportProvider.request(requestPayload);
-      console.log('Balance response:', balance);
       const balanceInEther = ethers.formatEther(balance);
       setResult(
         (v) => result = v,
@@ -1400,31 +1374,21 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
   }
 
   async function executeGetTransactionReceipt() {
-    console.log('Executing get transaction receipt');
-    console.log('Transaction receipt params:', params.transactionReceipt);
-
     try {
       if (!params.transactionReceipt.hash) {
         throw new Error('Transaction hash is required');
       }
-
       if (!params.transactionReceipt.hash.startsWith('0x')) {
         throw new Error('Transaction hash must start with 0x');
       }
-
       if (!passportProvider) {
         throw new Error('Provider not initialized');
       }
-
       const requestPayload = {
         method: 'eth_getTransactionReceipt',
         params: [params.transactionReceipt.hash]
       };
-
-      console.log('Getting transaction receipt with payload:', requestPayload);
       const response = await passportProvider.request(requestPayload);
-      console.log('Transaction receipt response:', response);
-
       if (!response) {
         result = {
           method: 'eth_getTransactionReceipt',
@@ -1433,45 +1397,32 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
           response: null,
           formatted: 'Transaction receipt not found (transaction may be pending)'
         };
-      } else {
-        const gasUsed = parseInt(response.gasUsed, 16).toLocaleString();
-        const cumulativeGasUsed = parseInt(response.cumulativeGasUsed, 16).toLocaleString();
-        const effectiveGasPrice = response.effectiveGasPrice ? 
-          (BigInt(response.effectiveGasPrice) / BigInt(1e9)).toString() : 
-          'Not available';
-        
-        let logs = '';
-        if (response.logs && response.logs.length > 0) {
-          logs = '\n\nEvent Logs:\n' + response.logs.map((log: any, index: number) => 
-            `Log ${index + 1}:\n` +
-            `  Address: ${log.address}\n` +
-            `  Topics: ${log.topics.join('\n          ')}\n` +
-            `  Data: ${log.data}`
-          ).join('\n\n');
-        }
-
-        result = {
-          method: 'eth_getTransactionReceipt',
-          description: "Returns the receipt of a transaction by transaction hash.",
-          request: requestPayload,
-          response: response,
-          formatted: `Transaction Receipt:
-Hash: ${response.transactionHash}
-Status: ${response.status === '0x1' ? 'Success' : 'Failed'}
-Block Number: ${parseInt(response.blockNumber, 16).toLocaleString()}
-Block Hash: ${response.blockHash}
-From: ${response.from}
-To: ${response.to || 'Contract Creation'}
-Contract Address: ${response.contractAddress || 'N/A'}
-Gas Used: ${gasUsed}
-Cumulative Gas Used: ${cumulativeGasUsed}
-Effective Gas Price: ${effectiveGasPrice} Gwei
-Transaction Index: ${parseInt(response.transactionIndex, 16)}${logs}`
-        };
+        displayOrder = ['eth_getTransactionReceipt'];
+        return;
       }
+      const gasUsed = parseInt(response.gasUsed, 16).toLocaleString();
+      const cumulativeGasUsed = parseInt(response.cumulativeGasUsed, 16).toLocaleString();
+      const effectiveGasPrice = response.effectiveGasPrice ? 
+        (BigInt(response.effectiveGasPrice) / BigInt(1e9)).toString() : 
+        'Not available';
+      let logs = '';
+      if (response.logs && response.logs.length > 0) {
+        logs = '\n\nEvent Logs:\n' + response.logs.map((log: any, index: number) => 
+          `Log ${index + 1}:\n` +
+          `  Address: ${log.address}\n` +
+          `  Topics: ${log.topics.join('\n          ')}\n` +
+          `  Data: ${log.data}`
+        ).join('\n\n');
+      }
+      result = {
+        method: 'eth_getTransactionReceipt',
+        description: "Returns the receipt of a transaction by transaction hash.",
+        request: requestPayload,
+        response: response,
+        formatted: `Transaction Receipt:\nHash: ${response.transactionHash}\nStatus: ${response.status === '0x1' ? 'Success' : 'Failed'}\nBlock Number: ${parseInt(response.blockNumber, 16).toLocaleString()}\nBlock Hash: ${response.blockHash}\nFrom: ${response.from}\nTo: ${response.to || 'Contract Creation'}\nContract Address: ${response.contractAddress || 'N/A'}\nGas Used: ${gasUsed}\nCumulative Gas Used: ${cumulativeGasUsed}\nEffective Gas Price: ${effectiveGasPrice} Gwei\nTransaction Index: ${parseInt(response.transactionIndex, 16)}${logs}`
+      };
       displayOrder = ['eth_getTransactionReceipt'];
     } catch (error: any) {
-      console.error('Error getting transaction receipt:', error);
       result = {
         method: 'eth_getTransactionReceipt',
         description: "Returns the receipt of a transaction by transaction hash.",
@@ -1939,8 +1890,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="balance-address">
                           Address <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="balance-address"
                           bind:value={balanceParams.address}
                           placeholder={userAddress || '0x...'}
@@ -1973,8 +1923,7 @@ Message:
                           <label class="block text-sm font-medium text-gray-700 mb-1" for="balance-block-number">
                             Block Number
                           </label>
-                          <input
-                            type="text"
+                          <InputField
                             id="balance-block-number"
                             bind:value={balanceParams.customBlockNumber}
                             placeholder="123 or 0x7b"
@@ -1999,8 +1948,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="tx-to">
                           To Address <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="tx-to"
                           bind:value={params.transaction.to}
                           placeholder="0x..."
@@ -2013,8 +1961,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="tx-value">
                           Value (in Wei) <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="tx-value"
                           bind:value={params.transaction.value}
                           placeholder="1000000000000000"
@@ -2027,8 +1974,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="tx-data">
                           Data
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="tx-data"
                           bind:value={params.transaction.data}
                           placeholder="0x..."
@@ -2041,8 +1987,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="tx-gas-limit">
                           Gas Limit
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="tx-gas-limit"
                           bind:value={params.transaction.gasLimit}
                           placeholder="21000"
@@ -2066,8 +2011,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="storage-address">
                           Address <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="storage-address"
                           bind:value={params.storage.address}
                           placeholder={userAddress || '0x...'}
@@ -2080,8 +2024,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="storage-slot">
                           Storage Slot <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="storage-slot"
                           bind:value={params.storage.slot}
                           placeholder="0x0"
@@ -2114,8 +2057,7 @@ Message:
                           <label class="block text-sm font-medium text-gray-700 mb-1" for="storage-block-number">
                             Block Number
                           </label>
-                          <input
-                            type="text"
+                          <InputField
                             id="storage-block-number"
                             bind:value={params.storage.customBlockNumber}
                             placeholder="123 or 0x7b"
@@ -2140,8 +2082,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-to">
                           To Address <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="estimate-to"
                           bind:value={estimateGasParams.to}
                           placeholder="0x..."
@@ -2154,8 +2095,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-value">
                           Value (in Wei)
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="estimate-value"
                           bind:value={estimateGasParams.value}
                           placeholder="0x0"
@@ -2168,8 +2108,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-data">
                           Data
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="estimate-data"
                           bind:value={estimateGasParams.data}
                           placeholder="0x..."
@@ -2202,8 +2141,7 @@ Message:
                           <label class="block text-sm font-medium text-gray-700 mb-1" for="estimate-block-number">
                             Block Number
                           </label>
-                          <input
-                            type="text"
+                          <InputField
                             id="estimate-block-number"
                             bind:value={estimateGasParams.customBlockNumber}
                             placeholder="123 or 0x7b"
@@ -2228,8 +2166,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="call-to">
                           To Address <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="call-to"
                           bind:value={callParams.to}
                           placeholder="0x..."
@@ -2242,8 +2179,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="call-data">
                           Data
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="call-data"
                           bind:value={callParams.data}
                           placeholder="0x..."
@@ -2256,8 +2192,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="call-value">
                           Value
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="call-value"
                           bind:value={callParams.value}
                           placeholder="0x0"
@@ -2299,8 +2234,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="block-hash">
                           Block Hash <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="block-hash"
                           bind:value={blockByHashParams.blockHash}
                           placeholder="0x..."
@@ -2354,8 +2288,7 @@ Message:
                           <label class="block text-sm font-medium text-gray-700 mb-1" for="custom-block-number">
                             Block Number <span class="text-red-600">*</span>
                           </label>
-                          <input
-                            type="text"
+                          <InputField
                             id="custom-block-number"
                             bind:value={blockByNumberParams.customBlockNumber}
                             placeholder="123 or 0x7b"
@@ -2392,8 +2325,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="transaction-hash">
                           Transaction Hash <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="transaction-hash"
                           bind:value={transactionByHashParams.hash}
                           placeholder="0x..."
@@ -2416,8 +2348,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="receipt-transaction-hash">
                           Transaction Hash <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="receipt-transaction-hash"
                           bind:value={transactionReceiptParams.hash}
                           placeholder="0x..."
@@ -2440,8 +2371,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="transaction-count-address">
                           Address <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="transaction-count-address"
                           bind:value={transactionCountParams.address}
                           placeholder={userAddress || '0x...'}
@@ -2472,8 +2402,7 @@ Message:
                           <label class="block text-sm font-medium text-gray-700 mb-1" for="transaction-count-block-number">
                             Block Number <span class="text-red-600">*</span>
                           </label>
-                          <input
-                            type="text"
+                          <InputField
                             id="transaction-count-block-number"
                             bind:value={transactionCountParams.customBlockNumber}
                             placeholder="123 or 0x7b"
@@ -2498,8 +2427,7 @@ Message:
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="get-code-address">
                           Contract Address <span class="text-red-600">*</span>
                         </label>
-                        <input
-                          type="text"
+                        <InputField
                           id="get-code-address"
                           bind:value={getCodeParams.address}
                           placeholder="0x..."
@@ -2553,42 +2481,10 @@ Message:
                   {/if}
 
                   {#if type === 'eth_signTypedData_v4' && formVisibility.signTypedData}
-                    <div class="space-y-4 mb-4">
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1" for="sign-typed-data-address">
-                          Address <span class="text-red-600">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          id="sign-typed-data-address"
-                          value={userAddress || ''}
-                          disabled
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-gray-50"
-                        />
-                      </div>
-
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1" for="sign-typed-data-data">
-                          Typed Data <span class="text-red-600">*</span>
-                        </label>
-                        <textarea
-                          id="sign-typed-data-data"
-                          rows="12"
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono"
-                          placeholder="Enter EIP-712 TypedData JSON"
-                          value={JSON.stringify(signTypedDataParams.typedData, null, 2)}
-                          readonly
-                        ></textarea>
-                        <p class="mt-1 text-xs text-gray-500">A JSON in either string or object form that conforms to the EIP-712 TypedData JSON schema.</p>
-                      </div>
-
-                      <button
-                        class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
-                        on:click={executeSignTypedData}
-                      >
-                        Sign Message
-                      </button>
-                    </div>
+                    <SignTypedDataForm
+                      typedData={params.signTypedData.typedData}
+                      onSign={executeSignTypedData}
+                    />
                   {/if}
 
                   {#if type === 'personal_sign' && formVisibility.personalSign}
@@ -2683,47 +2579,14 @@ Message:
                       <div>
                         <h4 class="text-sm font-medium text-gray-900 mb-2">Linked Addresses</h4>
                         <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(linkedAddresses, null, 2)}</pre>
-                        {#if linkedAddresses.length > 0}
-                          <div class="mt-4 space-y-2">
-                            <h5 class="text-sm font-medium text-gray-700">Explorer Links:</h5>
-                            {#each linkedAddresses as address}
-                              <a 
-                                href={`https://explorer.${currentNetwork}.immutable.com/address/${address}?tab=tokens`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="block text-sm text-indigo-600 hover:text-indigo-800 break-all"
-                              >
-                                {address} ↗
-                              </a>
-                            {/each}
-                          </div>
-                        {/if}
+                        <AddressList addresses={linkedAddresses} explorerBase={NETWORK_CONFIG[currentNetwork].explorerUrl} />
                       </div>
                     </div>
                   {/if}
 
                   <!-- Result or Error -->
                   {#if result}
-                    <div class="mt-6 bg-gray-50 rounded-md p-4">
-                      {#if result.error}
-                        <h4 class="text-sm font-medium text-red-900 mb-2">Error:</h4>
-                        <p class="text-red-600 text-sm">{result.error}</p>
-                      {:else}
-                        {#if result.request}
-                          <div>
-                            <h4 class="text-sm font-medium text-gray-900 mb-2">Request Payload:</h4>
-                            <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(result.request, null, 2)}</pre>
-                          </div>
-                        {/if}
-
-                        {#if result.response}
-                          <div class="mt-4">
-                            <h4 class="text-sm font-medium text-gray-900 mb-2">Response Payload:</h4>
-                            <pre class="text-xs font-mono bg-white/50 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(result.response, null, 2)}</pre>
-                          </div>
-                        {/if}
-                      {/if}
-                    </div>
+                    <ResultPanel {result} />
                   {/if}
                 </div>
               {/each}
