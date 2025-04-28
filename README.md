@@ -22,9 +22,6 @@ A demonstration of Immutable Passport integration with SvelteKit.
 Create a `.env` file in the project root with the following variables:
 
 ```env
-# Environment (TESTNET or PRODUCTION)
-VITE_IMMUTABLE_ENVIRONMENT=TESTNET
-
 # Testnet Configuration
 VITE_IMMUTABLE_TESTNET_CLIENT_ID=your_testnet_client_id
 VITE_IMMUTABLE_TESTNET_PUBLISHABLE_KEY=your_testnet_publishable_key
