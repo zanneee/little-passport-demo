@@ -333,35 +333,14 @@
   }
 
   onMount(() => {
-    const environment = import.meta.env.VITE_IMMUTABLE_ENVIRONMENT;
-    if (!environment) {
-      console.error('VITE_IMMUTABLE_ENVIRONMENT is not set');
-      result = {
-        error: 'VITE_IMMUTABLE_ENVIRONMENT is not set. Please check your .env file.'
-      };
-      return;
-    }
-
-    const isMainnet = environment === 'PRODUCTION';
-    currentNetwork = isMainnet ? 'mainnet' : 'testnet';
+    // Initialize with testnet by default
+    currentNetwork = 'testnet';
+    const isMainnet = false;
     
-    // Initialize Passport instance
     passportInstance = initializePassportInstance(isMainnet);
-    if (!passportInstance) {
-      console.error('Failed to initialize Passport instance');
-      result = {
-        error: 'Failed to initialize Passport. Please check your environment variables.'
-      };
-      return;
+    if (passportInstance) {
+      initializeProviders();
     }
-
-    // Initialize providers only if Passport instance is successfully created
-    initializeProviders().catch(error => {
-      console.error('Failed to initialize providers:', error);
-      result = {
-        error: `Failed to initialize providers: ${error instanceof Error ? error.message : 'Unknown error'}`
-      };
-    });
   });
 
   // Network switching function
