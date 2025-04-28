@@ -280,41 +280,114 @@
     }
   }
 
+  // Initialize Passport instance with environment variables
+  function initializePassportInstance(isMainnet: boolean) {
+    const prefix = isMainnet ? 'MAINNET' : 'TESTNET';
+    const envVars = {
+      clientId: import.meta.env[`VITE_IMMUTABLE_${prefix}_CLIENT_ID`],
+      publishableKey: import.meta.env[`VITE_IMMUTABLE_${prefix}_PUBLISHABLE_KEY`],
+      redirectUri: import.meta.env[`VITE_IMMUTABLE_${prefix}_REDIRECT_URI`],
+      logoutUri: import.meta.env[`VITE_IMMUTABLE_${prefix}_LOGOUT_URI`]
+    };
+
+    // Check for missing environment variables
+    const missingVars = Object.entries(envVars)
+      .filter(([_, value]) => !value)
+      .map(([key]) => `VITE_IMMUTABLE_${prefix}_${key.toUpperCase()}`);
+
+    if (missingVars.length > 0) {
+      console.error('Missing required environment variables:', missingVars.join(', '));
+      result = {
+        error: `Missing required environment variables: ${missingVars.join(', ')}. Please check your .env file.`
+      };
+      return null;
+    }
+
+    // Log environment variables for debugging (remove in production)
+    console.log(`Initializing Passport for ${prefix}:`, {
+      environment: isMainnet ? config.Environment.PRODUCTION : config.Environment.SANDBOX,
+      clientId: envVars.clientId,
+      redirectUri: envVars.redirectUri,
+      logoutUri: envVars.logoutUri
+    });
+
+    try {
+      return new passport.Passport({
+        baseConfig: {
+          environment: isMainnet ? config.Environment.PRODUCTION : config.Environment.SANDBOX,
+          publishableKey: envVars.publishableKey,
+        },
+        clientId: envVars.clientId,
+        redirectUri: envVars.redirectUri,
+        logoutRedirectUri: envVars.logoutUri,
+        audience: 'platform_api',
+        scope: 'openid offline_access email transact',
+      });
+    } catch (error) {
+      console.error('Failed to initialize Passport:', error);
+      result = {
+        error: `Failed to initialize Passport: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+      return null;
+    }
+  }
+
+  onMount(() => {
+    const environment = import.meta.env.VITE_IMMUTABLE_ENVIRONMENT;
+    if (!environment) {
+      console.error('VITE_IMMUTABLE_ENVIRONMENT is not set');
+      result = {
+        error: 'VITE_IMMUTABLE_ENVIRONMENT is not set. Please check your .env file.'
+      };
+      return;
+    }
+
+    const isMainnet = environment === 'PRODUCTION';
+    currentNetwork = isMainnet ? 'mainnet' : 'testnet';
+    
+    // Initialize Passport instance
+    passportInstance = initializePassportInstance(isMainnet);
+    if (!passportInstance) {
+      console.error('Failed to initialize Passport instance');
+      result = {
+        error: 'Failed to initialize Passport. Please check your environment variables.'
+      };
+      return;
+    }
+
+    // Initialize providers only if Passport instance is successfully created
+    initializeProviders().catch(error => {
+      console.error('Failed to initialize providers:', error);
+      result = {
+        error: `Failed to initialize providers: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    });
+  });
+
   // Network switching function
   async function switchNetwork(network: 'testnet' | 'mainnet') {
     try {
       currentNetwork = network;
       updateChainId();
       
-      // Update environment variables
-      const environment = network === 'mainnet' ? 
-        config.Environment.PRODUCTION : 
-        config.Environment.SANDBOX;
+      const isMainnet = network === 'mainnet';
+      passportInstance = initializePassportInstance(isMainnet);
+      
+      if (!passportInstance) return;
 
-      // Reinitialize Passport instance
-      passportInstance = new passport.Passport({
-        baseConfig: {
-          environment,
-          publishableKey: import.meta.env.VITE_IMMUTABLE_PUBLISHABLE_KEY,
-        },
-        clientId: import.meta.env.VITE_IMMUTABLE_CLIENT_ID,
-        redirectUri: import.meta.env.VITE_IMMUTABLE_REDIRECT_URI,
-        logoutRedirectUri: import.meta.env.VITE_IMMUTABLE_LOGOUT_URI,
-        audience: 'platform_api',
-        scope: 'openid offline_access email transact',
-      });
+      // Reset states but don't logout
+      isConnected = false;
+      userAddress = null;
+      balance = null;
+      signer = null;
+      browserProvider = null;
+      userInfo = null;
+      linkedAddresses = null;
+      displayOrder = [];
+      result = null;
 
-      // Reset connection
-      if (isConnected) {
-        await initializeProviders();
-      }
-
-      // Display result message
-      result = {
-        message: `Switched to ${NETWORK_CONFIG[network].name}`,
-        chainId: NETWORK_CONFIG[network].chainId
-      };
-      addToDisplayOrder('network');
+      // Initialize providers for new network
+      await initializeProviders();
     } catch (error: any) {
       console.error('Failed to switch network:', error);
       result = {
@@ -343,32 +416,6 @@
     // ... existing code ...
   }
 
-  onMount(() => {
-    if (!import.meta.env.VITE_IMMUTABLE_CLIENT_ID || 
-        !import.meta.env.VITE_IMMUTABLE_PUBLISHABLE_KEY ||
-        !import.meta.env.VITE_IMMUTABLE_ENVIRONMENT ||
-        !import.meta.env.VITE_IMMUTABLE_REDIRECT_URI ||
-        !import.meta.env.VITE_IMMUTABLE_LOGOUT_URI) {
-      console.error('Environment variables are not set. Please check .env file.');
-      return;
-    }
-    const environment = import.meta.env.VITE_IMMUTABLE_ENVIRONMENT === 'PRODUCTION' 
-      ? config.Environment.PRODUCTION 
-      : config.Environment.SANDBOX;
-    passportInstance = new passport.Passport({
-      baseConfig: {
-        environment,
-        publishableKey: import.meta.env.VITE_IMMUTABLE_PUBLISHABLE_KEY,
-      },
-      clientId: import.meta.env.VITE_IMMUTABLE_CLIENT_ID,
-      redirectUri: import.meta.env.VITE_IMMUTABLE_REDIRECT_URI,
-      logoutRedirectUri: import.meta.env.VITE_IMMUTABLE_LOGOUT_URI,
-      audience: 'platform_api',
-      scope: 'openid offline_access email transact',
-    });
-    initializeProviders();
-  });
-
   async function initializeProviders() {
     try {
       passportProvider = await passportInstance.connectEvm();
@@ -387,7 +434,7 @@
         if (accounts.length > 0) {
           userAddress = accounts[0];
           isConnected = true;
-          checkBalance();
+          
         } else {
           userAddress = null;
           isConnected = false;
@@ -413,21 +460,47 @@
 
   async function handleLogin() {
     try {
-      if (!browserProvider) return;
+      if (!browserProvider) {
+        console.error('Browser provider not initialized');
+        return;
+      }
       
+      console.log('Requesting accounts...');
       const accounts = await browserProvider.send('eth_requestAccounts', []);
+      console.log('Accounts received:', accounts);
+      
       if (accounts && accounts.length > 0) {
+        console.log('Account found, initializing connection...');
         isConnected = true;
         userAddress = accounts[0];
         signer = await browserProvider.getSigner();
         await checkBalance();
+        console.log('Login successful');
+      } else {
+        console.error('No accounts received');
+        isConnected = false;
+        userAddress = null;
+        balance = null;
+        signer = null;
       }
     } catch (error: unknown) {
-      console.error('Login failed:', error);
+      console.error('Login failed with error:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          name: error.name,
+          stack: error.stack
+        });
+      }
       isConnected = false;
       userAddress = null;
       balance = null;
       signer = null;
+      
+      // Show error to user
+      result = {
+        error: `Login failed: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+      };
     }
   }
 
@@ -1671,6 +1744,21 @@ Message:
       <!-- Sidebar -->
       <aside class="w-64 flex-none">
         <div class="bg-white rounded-lg shadow-sm p-6 sticky top-8">
+          <!-- Network Selection (move to top) -->
+          <div class="flex gap-2 mb-6">
+            <button
+              class="flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors {currentNetwork === 'testnet' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+              on:click={() => switchNetwork('testnet')}
+            >
+              Testnet
+            </button>
+            <button
+              class="flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors {currentNetwork === 'mainnet' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+              on:click={() => switchNetwork('mainnet')}
+            >
+              Mainnet
+            </button>
+          </div>
           <div class="space-y-6">
             <!-- Connection Status -->
             {#if isConnected}
@@ -1730,28 +1818,6 @@ Message:
             <div class="space-y-2">
               <h3 class="text-lg font-medium text-gray-900 mb-3">RPC Methods</h3>
               
-              <!-- Network Selection -->
-              <div class="flex gap-2 mb-2">
-                <button
-                  class="flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors
-                    {currentNetwork === 'testnet' ? 
-                      'bg-indigo-100 text-indigo-700' : 
-                      'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
-                  on:click={() => switchNetwork('testnet')}
-                >
-                  Testnet
-                </button>
-                <button
-                  class="flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors
-                    {currentNetwork === 'mainnet' ? 
-                      'bg-indigo-100 text-indigo-700' : 
-                      'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
-                  on:click={() => switchNetwork('mainnet')}
-                >
-                  Mainnet
-                </button>
-              </div>
-
               <button
                 class="w-full text-left px-4 py-2 text-sm text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
                 on:click={() => handleRpcCall('eth_requestAccounts')}

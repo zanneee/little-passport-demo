@@ -3,13 +3,15 @@
 export const NETWORK_CONFIG = {
   testnet: {
     name: 'Testnet',
-    chainId: 13473,
-    explorerUrl: 'https://explorer.testnet.immutable.com'
+    chainId: Number(import.meta.env.VITE_PASSPORT_TESTNET_CHAIN_ID) || 13473,
+    explorerUrl: import.meta.env.VITE_PASSPORT_TESTNET_EXPLORER_URL || 'https://explorer.testnet.immutable.com',
+    apiUrl: import.meta.env.VITE_PASSPORT_TESTNET_API_URL || 'https://api.testnet.passport.com'
   },
   mainnet: {
     name: 'Mainnet',
-    chainId: 13371,
-    explorerUrl: 'https://explorer.immutable.com'
+    chainId: Number(import.meta.env.VITE_PASSPORT_MAINNET_CHAIN_ID) || 13371,
+    explorerUrl: import.meta.env.VITE_PASSPORT_MAINNET_EXPLORER_URL || 'https://explorer.immutable.com',
+    apiUrl: import.meta.env.VITE_PASSPORT_MAINNET_API_URL || 'https://api.passport.com'
   }
 };
 
