@@ -26,13 +26,13 @@ Create a `.env` file in the project root with the following variables:
 VITE_IMMUTABLE_TESTNET_CLIENT_ID=your_testnet_client_id
 VITE_IMMUTABLE_TESTNET_PUBLISHABLE_KEY=your_testnet_publishable_key
 VITE_IMMUTABLE_TESTNET_REDIRECT_URI=http://localhost:5173
-VITE_IMMUTABLE_TESTNET_LOGOUT_URI=http://localhost:5173
+VITE_IMMUTABLE_TESTNET_LOGOUT_URI=http://localhost:5173/silent-logout
 
 # Mainnet Configuration
 VITE_IMMUTABLE_MAINNET_CLIENT_ID=your_mainnet_client_id
 VITE_IMMUTABLE_MAINNET_PUBLISHABLE_KEY=your_mainnet_publishable_key
 VITE_IMMUTABLE_MAINNET_REDIRECT_URI=http://localhost:5173
-VITE_IMMUTABLE_MAINNET_LOGOUT_URI=http://localhost:5173
+VITE_IMMUTABLE_MAINNET_LOGOUT_URI=http://localhost:5173/silent-logout
 ```
 
 ## Installation
