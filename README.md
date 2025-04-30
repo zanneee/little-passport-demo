@@ -68,7 +68,7 @@ npm install
 cp .env.example .env
 ```
 
-4. Update the `.env` file with your credentials from the [Immutable Developer Console](https://console.immutable.com)
+4. Update the `.env` file with your credentials from the [Immutable Hub](https://hub.immutable.com)
 
 5. Start the development server:
 ```bash
