@@ -2,6 +2,18 @@
 
 A demonstration of Immutable Passport integration with SvelteKit.
 
+## Live Demo
+
+Check out the live demo at [https://little-passport-demo.vercel.app/](https://little-passport-demo.vercel.app/)
+
+The demo showcases:
+- Network switching between Testnet and Mainnet
+- Passport authentication flow
+- RPC method demonstrations
+- Token and user profile management
+- Transaction and block information display
+- Message signing capabilities
+
 ## Features
 
 - Passport authentication integration
@@ -33,6 +45,9 @@ VITE_IMMUTABLE_MAINNET_CLIENT_ID=your_mainnet_client_id
 VITE_IMMUTABLE_MAINNET_PUBLISHABLE_KEY=your_mainnet_publishable_key
 VITE_IMMUTABLE_MAINNET_REDIRECT_URI=http://localhost:5173
 VITE_IMMUTABLE_MAINNET_LOGOUT_URI=http://localhost:5173/silent-logout
+
+# Optional: Logout Mode
+VITE_IMMUTABLE_LOGOUT_MODE=silent  # Set to 'silent' for silent logout
 ```
 
 ## Installation
@@ -48,7 +63,14 @@ cd passport-demo
 npm install
 ```
 
-3. Start the development server:
+3. Copy the environment variables:
+```bash
+cp .env.example .env
+```
+
+4. Update the `.env` file with your credentials from the [Immutable Developer Console](https://console.immutable.com)
+
+5. Start the development server:
 ```bash
 npm run dev
 ```
@@ -58,11 +80,17 @@ npm run dev
 ```
 src/
 ├── components/         # Reusable UI components
+│   ├── AccordionMenu.svelte
+│   ├── AddressList.svelte
+│   ├── InputField.svelte
+│   ├── ResultPanel.svelte
+│   └── SignTypedDataForm.svelte
 ├── constants/         # Network configuration and constants
 ├── routes/           # SvelteKit routes
 │   ├── +page.svelte  # Main application page
 │   ├── redirect/     # Authentication redirect handler
-│   └── logout/       # Logout handler
+│   ├── logout/       # Logout handler
+│   └── silent-logout/# Silent logout handler
 ├── types/            # TypeScript type definitions
 └── utils/            # Utility functions
 ```
@@ -89,6 +117,13 @@ src/
 
 ## Recent Changes
 
+- Added network selection (testnet/mainnet) functionality
+- Implemented Passport authentication UI
+- Added RPC method demonstration interface
+- Added token and user info display
+- Added transaction and block information display
+- Added signing functionality (typed data and personal sign)
+- Added responsive layout and styling
 - Optimized redirect and logout pages
 - Improved error handling
 - Enhanced network switching functionality
