@@ -314,6 +314,13 @@
     { label: 'Personal Sign', onClick: () => handleRpcCall('personal_sign') }
   ];
 
+  const gameMenuItems = [{ label: 'Build a game', onClick: () => handleGameBuild() }];
+
+  function handleGameBuild() {
+    // TODO: Implement game building functionality
+    console.log('Building a game...');
+  }
+
   function handleMenuStateChange(isOpen: boolean) {
     // Reset results when menu state changes
     result = null;
@@ -767,6 +774,7 @@
   }
 
   async function executeEstimateGas() {
+    params.estimateGas = { ...estimateGasParams };
     try {
       if (!params.estimateGas.to) {
         throw new Error('To address is required');
@@ -812,6 +820,7 @@
   }
 
   async function executeGetBalance() {
+    params.balance = { ...balanceParams };
     try {
       if (!params.balance.address) {
         throw new Error('Address is required');
@@ -853,6 +862,7 @@
   }
 
   async function executeCall() {
+    params.call = { ...callParams };
     console.log('Executing contract call');
     console.log('Call params:', params.call);
 
@@ -948,6 +958,7 @@
   }
 
   async function executeGetBlockByNumber() {
+    params.blockByNumber = { ...blockByNumberParams };
     console.log('Executing get block by number');
     console.log('Block by number params:', params.blockByNumber);
 
@@ -1694,6 +1705,8 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
   }
 
   async function executeGetTransactionCount() {
+    // UI 입력값을 params.transactionCount에 복사
+    params.transactionCount = { ...transactionCountParams };
     console.log('Executing get transaction count');
     console.log('Transaction count params:', params.transactionCount);
 
@@ -1706,20 +1719,10 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
         throw new Error('Valid address starting with 0x is required');
       }
 
-      let blockParameter = params.transactionCount.blockNumber;
-      if (blockParameter === 'number') {
-        if (!params.transactionCount.customBlockNumber) {
-          throw new Error('Block number is required when "Block number" is selected');
-        }
-        // Handle both hex and decimal input
-        if (params.transactionCount.customBlockNumber.startsWith('0x')) {
-          blockParameter = params.transactionCount.customBlockNumber;
-        } else if (/^\d+$/.test(params.transactionCount.customBlockNumber)) {
-          blockParameter = '0x' + Number(params.transactionCount.customBlockNumber).toString(16);
-        } else {
-          throw new Error('Invalid block number format. Use decimal or hex (0x) format');
-        }
-      }
+      const blockParameter = getBlockParameter(
+        params.transactionCount.blockNumber,
+        params.transactionCount.customBlockNumber
+      );
 
       const requestPayload = {
         method: 'eth_getTransactionCount',
@@ -1750,6 +1753,7 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
   }
 
   async function executeGetCode() {
+    params.getCode = { ...getCodeParams };
     console.log('Executing get code');
     console.log('Get code params:', params.getCode);
 
@@ -1997,6 +2001,15 @@ Message:
               <AccordionMenu
                 title="RPC Methods"
                 items={rpcMenuItems}
+                on:stateChange={(e) => handleMenuStateChange(e.detail)}
+              />
+            </div>
+
+            <!-- Game Building -->
+            <div class="space-y-2">
+              <AccordionMenu
+                title="Game Building"
+                items={gameMenuItems}
                 on:stateChange={(e) => handleMenuStateChange(e.detail)}
               />
             </div>
