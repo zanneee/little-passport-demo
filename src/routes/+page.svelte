@@ -312,6 +312,7 @@
     { label: 'Get ID Token', onClick: () => handleGetIdToken() },
     { label: 'Get Access Token', onClick: () => handleGetAccessToken() },
     { label: 'Get User Info', onClick: () => handleGetUserInfo() },
+    { label: 'Get User Info (REST API)', onClick: () => handleGetUserInfoRestApi() },
     { label: 'Get Linked Addresses', onClick: () => handleGetLinkedAddresses() }
   ];
 
@@ -999,6 +1000,40 @@ Note: Use the Reference ID${params.mintRequest.mintType === 'mintBatchByQuantity
       if ((error as Error).message === 'NOT_LOGGED_IN_ERROR') {
         console.error('User must be logged in to get user info');
       }
+      userInfo = null;
+      displayOrder = [];
+    }
+  }
+
+  async function handleGetUserInfoRestApi() {
+    try {
+      // Reset states
+      linkedAddresses = null;
+      result = null;
+      displayOrder = [];
+
+      const accessToken = await passportInstance!.getAccessToken();
+      if (!accessToken) {
+        throw new Error('Access token required for REST API call');
+      }
+
+      const baseUrl = getApiBaseUrlForNetwork(currentNetwork);
+      const response = await fetch(`${baseUrl}/passport-profile/v1/user/info`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const info = await response.json();
+      userInfo = info;
+      displayOrder = ['userInfo'];
+    } catch (error: unknown) {
+      console.error('Failed to get user info via REST API:', error);
       userInfo = null;
       displayOrder = [];
     }
