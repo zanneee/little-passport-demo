@@ -218,6 +218,27 @@
     },
     transactionReceipt: {
       hash: ''
+    },
+    mintRequest: {
+      chainName: '',
+      contractAddress: '',
+      contractType: 'ERC721',
+      mintType: 'mintBatch',
+      ownerAddress: '',
+      referenceId: '',
+      tokenId: '',
+      amount: '1',
+      quantity: '1',
+      includeMetadata: true,
+      metadata: {
+        name: '',
+        description: '',
+        image: '',
+        externalUrl: '',
+        animationUrl: '',
+        youtubeUrl: '',
+        attributes: [] as Array<{ trait_type: string; value: string }>
+      }
     }
   };
 
@@ -226,7 +247,8 @@
     blockByHash: false,
     transactionByHash: false,
     signTypedData: false,
-    personalSign: false
+    personalSign: false,
+    mintRequest: false
   };
 
   let menuState = {
@@ -314,11 +336,330 @@
     { label: 'Personal Sign', onClick: () => handleRpcCall('personal_sign') }
   ];
 
-  const gameMenuItems = [{ label: 'Build a game', onClick: () => handleGameBuild() }];
+  const gameMenuItems = [{ label: 'Create in-game assets', onClick: () => handleGameBuild() }];
+
+  function getChainNameForNetwork(network: 'testnet' | 'mainnet'): string {
+    return network === 'mainnet' ? 'imtbl-zkevm-mainnet' : 'imtbl-zkevm-testnet';
+  }
+
+  function getApiBaseUrlForNetwork(network: 'testnet' | 'mainnet'): string {
+    return network === 'mainnet'
+      ? 'https://api.immutable.com'
+      : 'https://api.sandbox.immutable.com';
+  }
+
+  function getApiKeyForNetwork(network: 'testnet' | 'mainnet'): string {
+    const prefix = network === 'mainnet' ? 'MAINNET' : 'TESTNET';
+    return import.meta.env[`VITE_IMMUTABLE_${prefix}_API_KEY`] || '';
+  }
+
+  function getNetworkConfig(network: 'testnet' | 'mainnet') {
+    return {
+      chainName: getChainNameForNetwork(network),
+      baseUrl: getApiBaseUrlForNetwork(network),
+      apiKey: getApiKeyForNetwork(network)
+    };
+  }
 
   function handleGameBuild() {
-    // TODO: Implement game building functionality
-    console.log('Building a game...');
+    // Reset states
+    result = null;
+    displayOrder = [];
+
+    // Reset form visibility
+    formVisibility = {
+      transaction: false,
+      blockByHash: false,
+      transactionByHash: false,
+      signTypedData: false,
+      personalSign: false,
+      mintRequest: false
+    };
+
+    // Show mint form
+    formVisibility.mintRequest = true;
+
+    // Initialize mint parameters
+    params.mintRequest = {
+      chainName: getChainNameForNetwork(currentNetwork),
+      contractAddress: '',
+      contractType: 'ERC721',
+      mintType: 'mintBatch',
+      ownerAddress: userAddress || '',
+      referenceId: '',
+      tokenId: '',
+      amount: '1',
+      quantity: '1',
+      includeMetadata: true,
+      metadata: {
+        name: '',
+        description: '',
+        image: '',
+        externalUrl: '',
+        animationUrl: '',
+        youtubeUrl: '',
+        attributes: [] as Array<{ trait_type: string; value: string }>
+      }
+    };
+
+    result = {
+      method: 'Mint tokens',
+      description: 'Create a mint request using Minting API.',
+      request: null,
+      response: null,
+      formatted: null
+    };
+    displayOrder = ['createMintRequest'];
+  }
+
+  async function executeMintRequest() {
+    try {
+      if (!params.mintRequest.contractAddress) {
+        throw new Error('Contract address is required');
+      }
+      if (!params.mintRequest.ownerAddress) {
+        throw new Error('Owner address is required');
+      }
+      if (!params.mintRequest.referenceId) {
+        throw new Error('Reference ID is required');
+      }
+
+      const apiKey = getApiKeyForNetwork(currentNetwork);
+      if (!apiKey) {
+        throw new Error(
+          `API Key for ${currentNetwork} is required. Please set VITE_IMMUTABLE_${currentNetwork.toUpperCase()}_API_KEY in your environment.`
+        );
+      }
+
+      // Validate token ID for specific mint types
+      if (
+        (params.mintRequest.mintType === 'mintBatch' ||
+          params.mintRequest.contractType === 'ERC1155') &&
+        !params.mintRequest.tokenId
+      ) {
+        throw new Error('Token ID is required for this mint type');
+      }
+
+      // Validate quantity for mintBatchByQuantity
+      if (
+        params.mintRequest.mintType === 'mintBatchByQuantity' &&
+        params.mintRequest.contractType === 'ERC721'
+      ) {
+        const quantity = parseInt(params.mintRequest.quantity);
+        if (!params.mintRequest.quantity || isNaN(quantity) || quantity <= 0) {
+          throw new Error(
+            'Quantity is required and must be a positive number for mintBatchByQuantity'
+          );
+        }
+      }
+
+      // Validate amount for ERC1155
+      if (
+        params.mintRequest.contractType === 'ERC1155' &&
+        (!params.mintRequest.amount || parseInt(params.mintRequest.amount) <= 0)
+      ) {
+        throw new Error('Amount must be greater than 0 for ERC1155');
+      }
+
+      // Handle different mint types and build assets array
+      let assets: any[] = [];
+
+      if (
+        params.mintRequest.mintType === 'mintBatchByQuantity' &&
+        params.mintRequest.contractType === 'ERC721'
+      ) {
+        // For mintBatchByQuantity, create multiple assets with unique reference IDs
+        const quantity = parseInt(params.mintRequest.quantity) || 1;
+
+        if (quantity <= 0 || quantity > 100) {
+          throw new Error('Quantity must be between 1 and 100');
+        }
+
+        for (let i = 0; i < quantity; i++) {
+          const mintAsset: any = {
+            owner_address: params.mintRequest.ownerAddress,
+            reference_id: `${params.mintRequest.referenceId}-${i + 1}`
+          };
+
+          // Add metadata if enabled and provided
+          if (
+            params.mintRequest.includeMetadata &&
+            (params.mintRequest.metadata.name ||
+              params.mintRequest.metadata.description ||
+              params.mintRequest.metadata.image)
+          ) {
+            const metadata: any = {};
+
+            if (params.mintRequest.metadata.name) {
+              metadata.name =
+                quantity > 1
+                  ? `${params.mintRequest.metadata.name} #${i + 1}`
+                  : params.mintRequest.metadata.name;
+            }
+            if (params.mintRequest.metadata.description)
+              metadata.description = params.mintRequest.metadata.description;
+            if (params.mintRequest.metadata.image)
+              metadata.image = params.mintRequest.metadata.image;
+            if (params.mintRequest.metadata.externalUrl)
+              metadata.external_url = params.mintRequest.metadata.externalUrl;
+            if (params.mintRequest.metadata.animationUrl)
+              metadata.animation_url = params.mintRequest.metadata.animationUrl;
+            if (params.mintRequest.metadata.youtubeUrl)
+              metadata.youtube_url = params.mintRequest.metadata.youtubeUrl;
+
+            // Add attributes if they exist
+            if (
+              params.mintRequest.metadata.attributes &&
+              params.mintRequest.metadata.attributes.length > 0
+            ) {
+              metadata.attributes = params.mintRequest.metadata.attributes.filter(
+                (attr) => attr.trait_type && attr.value
+              );
+            }
+
+            mintAsset.metadata = metadata;
+          }
+
+          assets.push(mintAsset);
+        }
+      } else {
+        // For mintBatch and ERC1155, create a single asset
+        const mintAsset: any = {
+          owner_address: params.mintRequest.ownerAddress,
+          reference_id: params.mintRequest.referenceId
+        };
+
+        // Add token_id if specified (for mintBatch or ERC1155)
+        if (
+          params.mintRequest.tokenId &&
+          (params.mintRequest.mintType === 'mintBatch' ||
+            params.mintRequest.contractType === 'ERC1155')
+        ) {
+          mintAsset.token_id = params.mintRequest.tokenId;
+        }
+
+        // Add amount for ERC1155
+        if (params.mintRequest.contractType === 'ERC1155') {
+          mintAsset.amount = params.mintRequest.amount;
+        }
+
+        // Add metadata if enabled and provided
+        if (
+          params.mintRequest.includeMetadata &&
+          (params.mintRequest.metadata.name ||
+            params.mintRequest.metadata.description ||
+            params.mintRequest.metadata.image)
+        ) {
+          const metadata: any = {};
+
+          if (params.mintRequest.metadata.name) metadata.name = params.mintRequest.metadata.name;
+          if (params.mintRequest.metadata.description)
+            metadata.description = params.mintRequest.metadata.description;
+          if (params.mintRequest.metadata.image) metadata.image = params.mintRequest.metadata.image;
+          if (params.mintRequest.metadata.externalUrl)
+            metadata.external_url = params.mintRequest.metadata.externalUrl;
+          if (params.mintRequest.metadata.animationUrl)
+            metadata.animation_url = params.mintRequest.metadata.animationUrl;
+          if (params.mintRequest.metadata.youtubeUrl)
+            metadata.youtube_url = params.mintRequest.metadata.youtubeUrl;
+
+          // Add attributes if they exist
+          if (
+            params.mintRequest.metadata.attributes &&
+            params.mintRequest.metadata.attributes.length > 0
+          ) {
+            metadata.attributes = params.mintRequest.metadata.attributes.filter(
+              (attr) => attr.trait_type && attr.value
+            );
+          }
+
+          mintAsset.metadata = metadata;
+        }
+
+        assets.push(mintAsset);
+      }
+
+      const requestPayload = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-immutable-api-key': apiKey
+        },
+        body: JSON.stringify({
+          assets: assets
+        })
+      };
+
+      const baseUrl = getApiBaseUrlForNetwork(currentNetwork);
+
+      const url = `${baseUrl}/v1/chains/${params.mintRequest.chainName}/collections/${params.mintRequest.contractAddress}/nfts/mint-requests`;
+
+      console.log('Making mint request to:', url);
+      console.log('Request payload:', requestPayload);
+
+      // Show loading state
+      result = {
+        method: 'Mint tokens',
+        description: 'Create a mint request using Minting API.',
+        request: requestPayload,
+        response: 'Creating mint request...',
+        formatted: 'Creating mint request...'
+      };
+
+      const response = await fetch(url, requestPayload);
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status}: ${responseData.message || responseData.error || 'Unknown error'}`
+        );
+      }
+
+      result = {
+        method: 'Mint tokens',
+        description: 'Create a mint request using Minting API.',
+        request: {
+          url,
+          ...requestPayload,
+          body: JSON.parse(requestPayload.body)
+        },
+        response: responseData,
+        formatted: `✅ Mint request created successfully!
+
+${
+  params.mintRequest.mintType === 'mintBatchByQuantity' &&
+  params.mintRequest.contractType === 'ERC721'
+    ? `Quantity: ${params.mintRequest.quantity} NFTs requested\nReference ID Pattern: ${params.mintRequest.referenceId}-1 to ${params.mintRequest.referenceId}-${params.mintRequest.quantity}`
+    : `Reference ID: ${params.mintRequest.referenceId}`
+}
+Rate Limit Info:
+- Remaining requests: ${responseData.imx_remaining_mint_requests || 'N/A'}
+- Rate limit: ${responseData.imx_mint_requests_limit || 'N/A'}
+- Reset time: ${responseData.imx_mint_requests_limit_reset || 'N/A'}
+
+Note: Use the Reference ID${params.mintRequest.mintType === 'mintBatchByQuantity' && params.mintRequest.contractType === 'ERC721' ? 's' : ''} to track the mint status via the mint-requests endpoint or webhooks.`
+      };
+    } catch (error: any) {
+      console.error('Mint request failed:', error);
+      result = {
+        method: 'Mint tokens',
+        description: 'Create a mint request using Minting API.',
+        error: error.message || 'Failed to create mint request'
+      };
+    }
+  }
+
+  function addAttribute() {
+    params.mintRequest.metadata.attributes = [
+      ...params.mintRequest.metadata.attributes,
+      { trait_type: '', value: '' }
+    ];
+  }
+
+  function removeAttribute(index: number) {
+    params.mintRequest.metadata.attributes = params.mintRequest.metadata.attributes.filter(
+      (_, i) => i !== index
+    );
   }
 
   function handleMenuStateChange(isOpen: boolean) {
@@ -331,7 +672,8 @@
       blockByHash: false,
       transactionByHash: false,
       signTypedData: false,
-      personalSign: false
+      personalSign: false,
+      mintRequest: false
     };
   }
 
@@ -447,6 +789,11 @@
 
       // Initialize providers for new network
       await initializeProviders();
+
+      // Update mint request chain name if mint form is open
+      if (formVisibility.mintRequest) {
+        params.mintRequest.chainName = getChainNameForNetwork(network);
+      }
     } catch (error: any) {
       console.error('Failed to switch network:', error);
       result = {
@@ -1103,7 +1450,8 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
         blockByHash: false,
         transactionByHash: false,
         signTypedData: false,
-        personalSign: false
+        personalSign: false,
+        mintRequest: false
       };
 
       // Reset transaction states
@@ -1178,6 +1526,27 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
         },
         transactionReceipt: {
           hash: ''
+        },
+        mintRequest: {
+          chainName: '',
+          contractAddress: '',
+          contractType: 'ERC721',
+          mintType: 'mintBatch',
+          ownerAddress: '',
+          referenceId: '',
+          tokenId: '',
+          amount: '1',
+          quantity: '1',
+          includeMetadata: true,
+          metadata: {
+            name: '',
+            description: '',
+            image: '',
+            externalUrl: '',
+            animationUrl: '',
+            youtubeUrl: '',
+            attributes: [] as Array<{ trait_type: string; value: string }>
+          }
         }
       };
 
@@ -1851,7 +2220,10 @@ Transaction Index: ${response.transactionIndex ? parseInt(response.transactionIn
         description: 'Signs typed structured data using the EIP-712 specification (v4).',
         request: {
           ...requestPayload,
-          params: [requestPayload.params[0], JSON.parse(requestPayload.params[1])]
+          params: [
+            requestPayload.params[0],
+            requestPayload.params[1] ? JSON.parse(requestPayload.params[1]) : null
+          ]
         },
         response: signature,
         formatted: `Signature: ${signature}\n\nSigned Message Details:
@@ -2030,7 +2402,9 @@ Message:
                   <!-- Method Title and Description -->
                   {#if !['idToken', 'accessToken', 'userInfo', 'linkedAddresses'].includes(type)}
                     <div class="border-b border-gray-200 pb-4 mb-4">
-                      <h3 class="text-lg font-medium text-gray-900">{type}</h3>
+                      <h3 class="text-lg font-medium text-gray-900">
+                        {type === 'createMintRequest' ? 'Mint tokens' : type}
+                      </h3>
                       {#if result?.description}
                         <p class="mt-1 text-sm text-gray-600">{result.description}</p>
                       {/if}
@@ -2542,6 +2916,265 @@ Message:
                       <button class="btn-primary" on:click={executePersonalSign}>
                         Sign Message
                       </button>
+                    </div>
+                  {/if}
+
+                  {#if type === 'createMintRequest' && formVisibility.mintRequest}
+                    <div class="space-y-6 mb-4">
+                      <!-- Contract Type -->
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                          Contract Type
+                        </label>
+                        <select bind:value={params.mintRequest.contractType} class="select-field">
+                          <option value="ERC721">ERC-721</option>
+                          <option value="ERC1155">ERC-1155</option>
+                        </select>
+                      </div>
+
+                      <InputField
+                        id="mint-contract-address"
+                        bind:value={params.mintRequest.contractAddress}
+                        label="Contract Address"
+                        placeholder="0x..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        required={true}
+                        description="The deployed contract address for your collection."
+                      />
+
+                      <!-- Mint Type Selection for ERC721 -->
+                      {#if params.mintRequest.contractType === 'ERC721'}
+                        <div>
+                          <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Mint Type
+                          </label>
+                          <select bind:value={params.mintRequest.mintType} class="select-field">
+                            <option value="mintBatch">mintBatch (specify token ID)</option>
+                            <option value="mintBatchByQuantity"
+                              >mintBatchByQuantity (auto-generated token ID)</option
+                            >
+                          </select>
+                          <p class="mt-1 text-xs text-gray-500">
+                            {#if params.mintRequest.mintType === 'mintBatch'}
+                              You specify the token ID. Less gas efficient but allows custom token
+                              IDs.
+                            {:else}
+                              System generates token ID sequentially. More gas efficient.
+                            {/if}
+                          </p>
+                        </div>
+                      {/if}
+
+                      <!-- Quantity Field for mintBatchByQuantity -->
+                      {#if params.mintRequest.contractType === 'ERC721' && params.mintRequest.mintType === 'mintBatchByQuantity'}
+                        <InputField
+                          id="mint-quantity"
+                          bind:value={params.mintRequest.quantity}
+                          label="Quantity"
+                          placeholder="1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                          required={true}
+                          description="Number of NFTs to mint in the batch with auto-generated token IDs."
+                        />
+                      {/if}
+
+                      <!-- Basic Required Fields -->
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <InputField
+                          id="mint-owner-address"
+                          bind:value={params.mintRequest.ownerAddress}
+                          label="Owner Address"
+                          placeholder={userAddress || '0x...'}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                          required={true}
+                          description="Wallet address that will own the minted asset."
+                        />
+
+                        <InputField
+                          id="mint-reference-id"
+                          bind:value={params.mintRequest.referenceId}
+                          label="Reference ID"
+                          placeholder="unique-ref-123"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                          required={true}
+                          description="Unique identifier for tracking this mint request."
+                        />
+                      </div>
+
+                      <!-- Token ID and Amount Fields -->
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {#if (params.mintRequest.contractType === 'ERC721' && params.mintRequest.mintType === 'mintBatch') || params.mintRequest.contractType === 'ERC1155'}
+                          <InputField
+                            id="mint-token-id"
+                            bind:value={params.mintRequest.tokenId}
+                            label="Token ID"
+                            placeholder="1"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            required={true}
+                            description="Unique identifier for the token within the collection."
+                          />
+                        {/if}
+
+                        {#if params.mintRequest.contractType === 'ERC1155'}
+                          <InputField
+                            id="mint-amount"
+                            bind:value={params.mintRequest.amount}
+                            label="Amount"
+                            placeholder="1"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            required={true}
+                            description="Number of tokens to mint for this token ID."
+                          />
+                        {/if}
+                      </div>
+
+                      <!-- Metadata Section -->
+                      <div class="border-t pt-6">
+                        <div class="flex items-center mb-4">
+                          <input
+                            type="checkbox"
+                            id="include-metadata"
+                            bind:checked={params.mintRequest.includeMetadata}
+                            class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                          />
+                          <label
+                            class="ml-2 block text-sm font-medium text-gray-900"
+                            for="include-metadata"
+                          >
+                            Include Metadata in Request
+                          </label>
+                        </div>
+                        <p class="text-xs text-gray-500 mb-4">
+                          Including metadata in the request optimizes performance but you must still
+                          store metadata files at baseURI/token_id.
+                        </p>
+
+                        {#if params.mintRequest.includeMetadata}
+                          <div class="space-y-4 pl-6 border-l-2 border-gray-200">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <InputField
+                                id="metadata-name"
+                                bind:value={params.mintRequest.metadata.name}
+                                label="Name"
+                                placeholder="My Awesome NFT"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                description="The name of the NFT."
+                              />
+
+                              <InputField
+                                id="metadata-image"
+                                bind:value={params.mintRequest.metadata.image}
+                                label="Image URL"
+                                placeholder="https://example.com/image.png"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                description="URL to the image asset."
+                              />
+                            </div>
+
+                            <InputField
+                              id="metadata-description"
+                              bind:value={params.mintRequest.metadata.description}
+                              label="Description"
+                              placeholder="A detailed description of the NFT..."
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                              textarea={true}
+                              rows={3}
+                              description="Description of the NFT."
+                            />
+
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <InputField
+                                id="metadata-external-url"
+                                bind:value={params.mintRequest.metadata.externalUrl}
+                                label="External URL"
+                                placeholder="https://example.com"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                description="Link to external website."
+                              />
+
+                              <InputField
+                                id="metadata-animation-url"
+                                bind:value={params.mintRequest.metadata.animationUrl}
+                                label="Animation URL"
+                                placeholder="https://example.com/animation.mp4"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                description="URL to animation/video file."
+                              />
+
+                              <InputField
+                                id="metadata-youtube-url"
+                                bind:value={params.mintRequest.metadata.youtubeUrl}
+                                label="YouTube URL"
+                                placeholder="https://youtube.com/watch?v=..."
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                description="YouTube video URL."
+                              />
+                            </div>
+
+                            <!-- Attributes -->
+                            <div>
+                              <div class="flex items-center justify-between mb-3">
+                                <label class="block text-sm font-medium text-gray-700">
+                                  Attributes
+                                </label>
+                                <button
+                                  type="button"
+                                  on:click={addAttribute}
+                                  class="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+                                >
+                                  + Add Attribute
+                                </button>
+                              </div>
+
+                              {#if params.mintRequest.metadata.attributes.length > 0}
+                                <div class="space-y-2">
+                                  {#each params.mintRequest.metadata.attributes as attribute, index}
+                                    <div class="grid grid-cols-5 gap-2 items-end">
+                                      <div class="col-span-2">
+                                        <InputField
+                                          id="attribute-trait-{index}"
+                                          bind:value={attribute.trait_type}
+                                          label="Trait Type"
+                                          placeholder="Color"
+                                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                          description=""
+                                        />
+                                      </div>
+                                      <div class="col-span-2">
+                                        <InputField
+                                          id="attribute-value-{index}"
+                                          bind:value={attribute.value}
+                                          label="Value"
+                                          placeholder="Blue"
+                                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                          description=""
+                                        />
+                                      </div>
+                                      <div>
+                                        <button
+                                          type="button"
+                                          on:click={() => removeAttribute(index)}
+                                          class="w-full px-3 py-2 text-red-600 hover:text-red-900 text-sm"
+                                        >
+                                          Remove
+                                        </button>
+                                      </div>
+                                    </div>
+                                  {/each}
+                                </div>
+                              {:else}
+                                <p class="text-sm text-gray-500 italic">No attributes added yet.</p>
+                              {/if}
+                            </div>
+                          </div>
+                        {/if}
+                      </div>
+
+                      <div class="flex flex-col space-y-2">
+                        <button class="btn-primary" on:click={executeMintRequest}>
+                          Create Mint Request
+                        </button>
+                      </div>
                     </div>
                   {/if}
 
