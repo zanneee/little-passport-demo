@@ -3251,7 +3251,6 @@ Message:
                       isConnected={isConnected}
                     />
                   {/if}
-
                   {#if type === 'idToken' && tokenState.idToken}
                     <div class="space-y-4 mb-4">
                       <div>
