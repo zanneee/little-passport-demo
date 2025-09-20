@@ -6,6 +6,7 @@
   import ResultPanel from '../components/ResultPanel.svelte';
   import AddressList from '../components/AddressList.svelte';
   import AccordionMenu from '../components/AccordionMenu.svelte';
+  import TransferAssets from '../components/TransferAssets.svelte';
   import { jwtDecode } from 'jwt-decode';
   import { BrowserProvider, Contract, ethers } from 'ethers';
   import type { Eip1193Provider } from 'ethers';
@@ -337,7 +338,10 @@
     { label: 'Personal Sign', onClick: () => handleRpcCall('personal_sign') }
   ];
 
-  const gameMenuItems = [{ label: 'Create in-game assets', onClick: () => handleGameBuild() }];
+  const gameMenuItems = [
+    { label: 'Create in-game assets', onClick: () => handleGameBuild() },
+    { label: 'Transfer assets', onClick: () => handleTransferAssets() }
+  ];
 
   function getChainNameForNetwork(network: 'testnet' | 'mainnet'): string {
     return network === 'mainnet' ? 'imtbl-zkevm-mainnet' : 'imtbl-zkevm-testnet';
@@ -411,6 +415,31 @@
       formatted: null
     };
     displayOrder = ['createMintRequest'];
+  }
+
+  function handleTransferAssets() {
+    // Reset states
+    result = null;
+    displayOrder = [];
+
+    // Reset form visibility
+    formVisibility = {
+      transaction: false,
+      blockByHash: false,
+      transactionByHash: false,
+      signTypedData: false,
+      personalSign: false,
+      mintRequest: false
+    };
+
+    result = {
+      method: 'Transfer assets',
+      description: 'Transfer NFTs or tokens between addresses. Select from your assets below.',
+      request: null,
+      response: null,
+      formatted: null
+    };
+    displayOrder = ['transferAssets'];
   }
 
   async function executeMintRequest() {
@@ -3213,6 +3242,15 @@ Message:
                     </div>
                   {/if}
 
+                  {#if type === 'transferAssets'}
+                    <TransferAssets
+                      userAddress={userAddress}
+                      currentNetwork={currentNetwork}
+                      signer={signer}
+                      provider={passportProvider}
+                      isConnected={isConnected}
+                    />
+                  {/if}
                   {#if type === 'idToken' && tokenState.idToken}
                     <div class="space-y-4 mb-4">
                       <div>
