@@ -11,6 +11,12 @@
   import { BrowserProvider, Contract, ethers } from 'ethers';
   import type { Eip1193Provider } from 'ethers';
   import { NETWORK_CONFIG, ERROR_MESSAGES, DEFAULT_TRANSACTION } from '../constants/network';
+  import {
+    calculateKeccak256Hash,
+    encodeFunctionCall,
+    decodeTransaction as decodeTransactionUtil,
+    parseParameters
+  } from '../utils/encodingUtils';
   import type {
     UserProfile,
     TokenState,
@@ -88,6 +94,28 @@
   let balance: string | null = null;
   let signer: ethers.JsonRpcSigner | null = null;
   let result: any = null;
+
+  // Keccak-256 variables
+  let keccakInput = '';
+  let keccakInputType = 'utf8';
+  let keccakResult = '';
+  let functionSelector = '';
+
+  // Transaction encoding variables
+  let encodeFunctionSignature = '';
+  let encodeParameters = '';
+  let encodeResult = '';
+  let decodeTransactionData = '';
+  let decodeABI = '';
+  let decodeResult = '';
+
+  // Placeholder text for ABI input
+  const abiPlaceholder =
+    '[{"name":"transfer","type":"function","inputs":[{"name":"to","type":"address"},{"name":"amount","type":"uint256"}]}]';
+
+  // Placeholder text for encode parameters
+  const encodeParamsPlaceholder =
+    '["0x742d35Cc6635C0532925a3b8D4C9db96C3a8b4B", "1000000000000000000"]';
   let currentNetwork: 'testnet' | 'mainnet' = 'testnet';
   let showTransactionForm = false;
   let showBlockByHashForm = false;
@@ -340,7 +368,8 @@
 
   const gameMenuItems = [
     { label: 'Create in-game assets', onClick: () => handleGameBuild() },
-    { label: 'Transfer assets', onClick: () => handleTransferAssets() }
+    { label: 'Transfer assets', onClick: () => handleTransferAssets() },
+    { label: 'Transaction data encoding', onClick: () => handleTransactionDataEncoding() }
   ];
 
   function getChainNameForNetwork(network: 'testnet' | 'mainnet'): string {
@@ -440,6 +469,89 @@
       formatted: null
     };
     displayOrder = ['transferAssets'];
+  }
+
+  function handleTransactionDataEncoding() {
+    // Reset states
+    result = null;
+    displayOrder = [];
+
+    // Reset form visibility
+    formVisibility = {
+      transaction: false,
+      blockByHash: false,
+      transactionByHash: false,
+      signTypedData: false,
+      personalSign: false,
+      mintRequest: false
+    };
+
+    result = {
+      method: 'Transaction data encoding',
+      description: 'Encode and decode transaction data for smart contract interactions.',
+      request: null,
+      response: null,
+      formatted: null
+    };
+    displayOrder = ['transactionDataEncoding'];
+  }
+
+  function calculateKeccak256() {
+    const result = calculateKeccak256Hash(keccakInput, keccakInputType as 'utf8' | 'hex');
+
+    if ('error' in result) {
+      keccakResult = 'Error: ' + result.error;
+      functionSelector = '';
+    } else {
+      keccakResult = result.hash;
+      functionSelector = result.selector;
+
+      console.log('Keccak-256 calculation:', {
+        input: keccakInput,
+        inputType: keccakInputType,
+        hash: result.hash,
+        selector: result.selector
+      });
+    }
+  }
+
+  function encodeFunction() {
+    // Parse parameters
+    const parametersResult = parseParameters(encodeParameters);
+    if ('error' in parametersResult) {
+      encodeResult = 'Error: ' + parametersResult.error;
+      return;
+    }
+
+    // Encode function call
+    const result = encodeFunctionCall(encodeFunctionSignature, parametersResult);
+
+    if ('error' in result) {
+      encodeResult = 'Error: ' + result.error;
+    } else {
+      encodeResult = result.encodedData;
+
+      console.log('Function encoding:', {
+        signature: encodeFunctionSignature,
+        parameters: parametersResult,
+        encoded: result.encodedData
+      });
+    }
+  }
+
+  function decodeTransaction() {
+    const result = decodeTransactionUtil(decodeTransactionData, decodeABI);
+
+    if ('error' in result) {
+      decodeResult = 'Error: ' + result.error;
+    } else {
+      decodeResult = JSON.stringify(result.decodedData, null, 2);
+
+      console.log('Transaction decoding:', {
+        input: decodeTransactionData,
+        decoded: result.decodedData
+      });
+    }
   }
 
   async function executeMintRequest() {
@@ -3251,6 +3363,253 @@ Message:
                       isConnected={isConnected}
                     />
                   {/if}
+
+                  {#if type === 'transactionDataEncoding'}
+                    <div class="space-y-4 mb-4">
+                      <div>
+                        <h4 class="text-sm font-medium text-gray-900 mb-2">
+                          Transaction Data Encoding
+                        </h4>
+                        <p class="text-xs text-gray-600 mb-4">
+                          Encode and decode transaction data for smart contract interactions.
+                        </p>
+                      </div>
+
+                      <div class="space-y-4">
+                        <!-- Keccak-256 Section -->
+                        <div class="bg-gray-50 p-4 rounded-md">
+                          <h4 class="text-sm font-medium text-gray-900 mb-2">
+                            🔐 Keccak-256 Hash Calculator
+                          </h4>
+                          <div class="space-y-3">
+                            <div>
+                              <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Input Type
+                              </label>
+                              <select
+                                bind:value={keccakInputType}
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                              >
+                                <option value="utf8">UTF-8</option>
+                                <option value="hex">Hex</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Input Text
+                              </label>
+                              <textarea
+                                bind:value={keccakInput}
+                                rows="2"
+                                placeholder="e.g., transfer(address,uint256) or craftSkin()"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                              ></textarea>
+                              <p class="text-xs text-gray-500 mt-1">
+                                Enter function signature or any text to hash
+                              </p>
+                            </div>
+
+                            <button
+                              on:click={calculateKeccak256}
+                              class="w-full bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                            >
+                              Calculate Hash
+                            </button>
+
+                            {#if keccakResult}
+                              <div class="mt-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                  Keccak-256 Hash
+                                </label>
+                                <div class="bg-gray-50 rounded-md p-3">
+                                  <code class="text-sm font-mono break-all">{keccakResult}</code>
+                                </div>
+                                {#if functionSelector}
+                                  <div class="mt-2">
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                                      Function Selector (First 4 bytes)
+                                    </label>
+                                    <div class="bg-blue-50 rounded-md p-3">
+                                      <code class="text-sm font-mono text-blue-800"
+                                        >{functionSelector}</code
+                                      >
+                                    </div>
+                                  </div>
+                                {/if}
+                              </div>
+                            {/if}
+
+                            <!-- Keccak-256 Usage Example -->
+                            <div class="mt-3 pt-3 border-t border-gray-200">
+                              <h5 class="text-xs font-medium text-gray-700 mb-1">💡 Example</h5>
+                              <div class="bg-gray-100 rounded p-2 text-xs">
+                                <p class="text-gray-700 mb-1">
+                                  <strong>Input:</strong> setApprovalForAll(address,bool)
+                                </p>
+                                <p class="text-gray-700 mb-1">
+                                  <strong>Hash:</strong> 0xa22cb4651ab9570f89bb516380c40ce76762284fb1f21337ceaf6adab99e7d4a
+                                </p>
+                                <p class="text-gray-700">
+                                  <strong>Selector:</strong> 0xa22cb465
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Encode Section -->
+                        <div class="bg-gray-50 p-4 rounded-md">
+                          <h4 class="text-sm font-medium text-gray-900 mb-2">
+                            📝 Function Call Encoder
+                          </h4>
+                          <div class="space-y-3">
+                            <div>
+                              <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Function Signature
+                              </label>
+                              <input
+                                type="text"
+                                bind:value={encodeFunctionSignature}
+                                placeholder="e.g., transfer(address,uint256)"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                              />
+                              <p class="text-xs text-gray-500 mt-1">
+                                Enter the function signature without 'function' keyword
+                              </p>
+                            </div>
+
+                            <div>
+                              <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Parameters (JSON)
+                              </label>
+                              <textarea
+                                bind:value={encodeParameters}
+                                rows="3"
+                                placeholder={encodeParamsPlaceholder}
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                              ></textarea>
+                              <p class="text-xs text-gray-500 mt-1">
+                                Enter parameters as a JSON array (leave empty for no parameters)
+                              </p>
+                            </div>
+
+                            <button
+                              on:click={encodeFunction}
+                              class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                            >
+                              Encode Function Data
+                            </button>
+
+                            {#if encodeResult}
+                              <div class="mt-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                  Encoded Data
+                                </label>
+                                <div class="bg-gray-50 rounded-md p-3">
+                                  <code class="text-sm font-mono break-all">{encodeResult}</code>
+                                </div>
+                              </div>
+                            {/if}
+
+                            <!-- Encoding Usage Example -->
+                            <div class="mt-3 pt-3 border-t border-gray-200">
+                              <h5 class="text-xs font-medium text-gray-700 mb-1">💡 Example</h5>
+                              <div class="bg-gray-100 rounded p-2 text-xs">
+                                <p class="text-gray-700 mb-1">
+                                  <strong>Function:</strong> transfer(address,uint256)
+                                </p>
+                                <p class="text-gray-700 mb-1">
+                                  <strong>Parameters:</strong> ["0x742d35Cc6635C0532925a3b8D4C9db96C3a8b4B",
+                                  "1000000000000000000"]
+                                </p>
+                                <p class="text-gray-700">
+                                  <strong>Result:</strong> 0xa9059cbb000000000000000000000000742d35cc...
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Decode Section -->
+                        <div class="bg-gray-50 p-4 rounded-md">
+                          <h4 class="text-sm font-medium text-gray-900 mb-2">
+                            🔍 Transaction Data Decoder
+                          </h4>
+                          <div class="space-y-3">
+                            <div>
+                              <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Transaction Data (Hex)
+                              </label>
+                              <textarea
+                                bind:value={decodeTransactionData}
+                                rows="3"
+                                placeholder="0xa9059cbb000000000000000000000000742d35cc6635c0532925a3b8d4c9db96c3a8b4b0000000000000000000000000000000000000000000000000de0b6b3a7640000"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                              ></textarea>
+                              <p class="text-xs text-gray-500 mt-1">
+                                Enter the transaction data to decode
+                              </p>
+                            </div>
+
+                            <div>
+                              <label class="block text-sm font-medium text-gray-700 mb-1">
+                                ABI (Optional)
+                              </label>
+                              <textarea
+                                bind:value={decodeABI}
+                                rows="2"
+                                placeholder={abiPlaceholder}
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                              ></textarea>
+                              <p class="text-xs text-gray-500 mt-1">
+                                Provide ABI for detailed parameter decoding (optional)
+                              </p>
+                            </div>
+
+                            <button
+                              on:click={decodeTransaction}
+                              class="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                            >
+                              Decode Transaction Data
+                            </button>
+
+                            {#if decodeResult}
+                              <div class="mt-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                  Decoded Result
+                                </label>
+                                <div class="bg-gray-50 rounded-md p-3">
+                                  <pre
+                                    class="text-sm font-mono whitespace-pre-wrap break-all">{decodeResult}</pre>
+                                </div>
+                              </div>
+                            {/if}
+
+                            <!-- Decoding Usage Example -->
+                            <div class="mt-3 pt-3 border-t border-gray-200">
+                              <h5 class="text-xs font-medium text-gray-700 mb-1">💡 Example</h5>
+                              <div class="bg-gray-100 rounded p-2 text-xs">
+                                <p class="text-gray-700 mb-1">
+                                  <strong>Input Data:</strong> 0xa9059cbb000000000000000000000000742d35cc...
+                                </p>
+                                <p class="text-gray-700 mb-1">
+                                  <strong>Function:</strong> transfer(address,uint256)
+                                </p>
+                                <p class="text-gray-700 mb-1">
+                                  <strong>Parameters:</strong> to=0x742d35Cc..., amount=1000000000000000000
+                                </p>
+                                <p class="text-gray-700">
+                                  <strong>Selector:</strong> 0xa9059cbb
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  {/if}
+
                   {#if type === 'idToken' && tokenState.idToken}
                     <div class="space-y-4 mb-4">
                       <div>
