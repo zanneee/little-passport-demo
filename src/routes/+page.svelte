@@ -498,14 +498,14 @@
 
   function calculateKeccak256() {
     const result = calculateKeccak256Hash(keccakInput, keccakInputType as 'utf8' | 'hex');
-
+    
     if ('error' in result) {
       keccakResult = 'Error: ' + result.error;
       functionSelector = '';
     } else {
       keccakResult = result.hash;
       functionSelector = result.selector;
-
+      
       console.log('Keccak-256 calculation:', {
         input: keccakInput,
         inputType: keccakInputType,
@@ -525,12 +525,12 @@
 
     // Encode function call
     const result = encodeFunctionCall(encodeFunctionSignature, parametersResult);
-
+    
     if ('error' in result) {
       encodeResult = 'Error: ' + result.error;
     } else {
       encodeResult = result.encodedData;
-
+      
       console.log('Function encoding:', {
         signature: encodeFunctionSignature,
         parameters: parametersResult,
@@ -541,19 +541,18 @@
 
   function decodeTransaction() {
     const result = decodeTransactionUtil(decodeTransactionData, decodeABI);
-
+    
     if ('error' in result) {
       decodeResult = 'Error: ' + result.error;
     } else {
       decodeResult = JSON.stringify(result.decodedData, null, 2);
-
+      
       console.log('Transaction decoding:', {
         input: decodeTransactionData,
         decoded: result.decodedData
       });
     }
   }
-
   async function executeMintRequest() {
     try {
       if (!params.mintRequest.contractAddress) {
@@ -3363,7 +3362,6 @@ Message:
                       isConnected={isConnected}
                     />
                   {/if}
-
                   {#if type === 'transactionDataEncoding'}
                     <div class="space-y-4 mb-4">
                       <div>
